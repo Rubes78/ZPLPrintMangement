@@ -14,6 +14,7 @@ export default function PropertiesPanel({ selectedObject, labelSettings, onUpdat
       angle: Math.round(selectedObject.angle ?? 0),
       text: selectedObject.text ?? '',
       fontSize: selectedObject.fontSize ?? 30,
+      zplTextAlign: selectedObject.zplTextAlign ?? 'L',
       barcodeData: selectedObject.barcodeData ?? '',
       barcodeType: selectedObject.barcodeType ?? 'code128',
       barcodeHeight: selectedObject.barcodeHeight ?? 80,
@@ -104,6 +105,23 @@ function TextProps({ local, setL, onUpdate }) {
       <Field label="Font height (dots)">
         <NumInput value={local.fontSize} min={8} max={500}
           onChange={(v) => { setL('fontSize', v); onUpdate({ fontSize: v }); }} />
+      </Field>
+      <Field label="Print alignment">
+        <div className="flex gap-1">
+          {[['L','Left','⬅'], ['C','Center','↔'], ['R','Right','➡']].map(([val, title, icon]) => (
+            <button key={val}
+              title={`${title} — uses ZPL ^FB for printer-accurate alignment`}
+              onClick={() => { setL('zplTextAlign', val); onUpdate({ zplTextAlign: val }); }}
+              className={`flex-1 py-1 rounded text-xs border ${local.zplTextAlign === val ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}`}>
+              {icon} {title}
+            </button>
+          ))}
+        </div>
+        {local.zplTextAlign !== 'L' && (
+          <p className="text-[10px] text-amber-400 mt-1">
+            Printer centers using its own font — preview position is approximate.
+          </p>
+        )}
       </Field>
     </Section>
   );

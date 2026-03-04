@@ -17,7 +17,7 @@ import {
 
 const CUSTOM_PROPS = [
   'elementType', 'barcodeType', 'barcodeData', 'fieldName',
-  'barcodeHeight', 'moduleWidth', 'showText', 'magnification', 'zplFontHeight',
+  'barcodeHeight', 'moduleWidth', 'showText', 'magnification', 'zplFontHeight', 'zplTextAlign',
 ];
 
 const GRID_SIZE = 10; // dots
@@ -171,6 +171,12 @@ const LabelCanvas = forwardRef(function LabelCanvas(
         case 'top':     obj.set({ top: 0 }); break;
         case 'middleV': obj.set({ top: Math.round((labelH - h) / 2) }); break;
         case 'bottom':  obj.set({ top: labelH - h }); break;
+      }
+      // For text objects, sync zplTextAlign so the ZPL uses ^FB for printer-side alignment
+      if (obj.elementType === 'text') {
+        if (direction === 'left')    obj.set({ zplTextAlign: 'L' });
+        if (direction === 'centerH') obj.set({ zplTextAlign: 'C' });
+        if (direction === 'right')   obj.set({ zplTextAlign: 'R' });
       }
       obj.setCoords();
     }

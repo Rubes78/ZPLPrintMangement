@@ -21,8 +21,9 @@ export function createTextElement({ left = 50, top = 50 } = {}) {
     elementType: 'text',
     fieldName: '',
     zplFontHeight: 30,
+    zplTextAlign: 'L', // L=left, C=center, R=right — controls ^FB in ZPL output
   });
-  extendToObject(obj, ['elementType', 'fieldName', 'zplFontHeight']);
+  extendToObject(obj, ['elementType', 'fieldName', 'zplFontHeight', 'zplTextAlign']);
   return obj;
 }
 

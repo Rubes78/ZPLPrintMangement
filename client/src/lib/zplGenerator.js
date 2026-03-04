@@ -107,7 +107,7 @@ export function generateZpl(objects, labelSettings, templateVars = {}) {
 
     switch (type) {
       case 'text':
-        zpl += generateText(obj, x, y, rot, templateVars);
+        zpl += generateText(obj, x, y, rot, templateVars, widthDots);
         break;
       case 'barcode':
         zpl += generateBarcode(obj, x, y, rot, templateVars);
@@ -132,10 +132,16 @@ export function generateZpl(objects, labelSettings, templateVars = {}) {
   return zpl;
 }
 
-function generateText(obj, x, y, rot, vars) {
+function generateText(obj, x, y, rot, vars, labelWidth) {
   const text = applyVars(obj.text || '', vars);
   const charH = round((obj.fontSize || 30) * (obj.scaleY || 1));
+  const align = obj.zplTextAlign || 'L';
   // ^A0 = scalable ZPL font; 0 width = auto (maintains aspect ratio)
+  if ((align === 'C' || align === 'R') && labelWidth) {
+    // ^FB lets the printer handle alignment using its own font metrics,
+    // which avoids off-center prints caused by canvas vs. printer font differences.
+    return `^FO0,${y}^A0${rot},${charH},0^FB${labelWidth},1,0,${align},0^FH^FD${text}^FS\n`;
+  }
   return `^FO${x},${y}^A0${rot},${charH},0^FH^FD${text}^FS\n`;
 }
 
