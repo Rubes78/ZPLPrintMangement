@@ -129,7 +129,7 @@ export default function Header({
         label="Print"
         onClick={onPrint}
         primary={true}
-        options={[{ label: 'Batch Print…', onClick: onBatchPrint }]}
+        options={[{ label: 'Import & Print…', onClick: onBatchPrint }]}
       />
 
       <div className="h-5 border-l border-slate-700 shrink-0" />

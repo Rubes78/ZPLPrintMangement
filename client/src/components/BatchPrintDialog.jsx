@@ -40,6 +40,20 @@ async function sendZpl(zpl, printer) {
   }
 }
 
+// ── Download CSV template ──────────────────────────────────────────────────────
+function downloadCsvTemplate(templateVars, labelName) {
+  const headers = [...templateVars, 'qty'];
+  const exampleRow = templateVars.map((v) => `Example ${v}`).concat(['1']);
+  const csv = [headers.join(','), exampleRow.join(',')].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${(labelName || 'label').replace(/[^a-z0-9]/gi, '_')}_template.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function BatchPrintDialog({
   isOpen, onClose,
@@ -59,7 +73,7 @@ export default function BatchPrintDialog({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
           <div className="flex items-center gap-4">
-            <span className="text-sm font-bold text-slate-100">Batch Print</span>
+            <span className="text-sm font-bold text-slate-100">Import &amp; Print</span>
             <div className="flex bg-slate-800 rounded p-0.5 gap-0.5">
               {['import', 'history'].map((t) => (
                 <button key={t} onClick={() => setTab(t)}
@@ -232,6 +246,23 @@ function ImportTab({ canvasObjects, labelSettings, currentLabelId, generateZpl }
           <p className="text-xs text-slate-400">{labelSettings.widthInches}"×{labelSettings.heightInches}" · {labelSettings.dpi} dpi</p>
           {templateVars.length === 0 && (
             <p className="text-xs text-amber-400 mt-1">No template variables found on this label.</p>
+          )}
+        </div>
+
+        {/* Download CSV template */}
+        <div className="px-4 py-3 border-b border-slate-700">
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">CSV Template</p>
+          <button
+            onClick={() => downloadCsvTemplate(templateVars, labelSettings.labelName)}
+            className="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs px-3 py-2 rounded border border-slate-600 transition-colors flex items-center justify-center gap-1.5"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download CSV Template
+          </button>
+          {templateVars.length > 0 && (
+            <p className="text-[10px] text-slate-500 mt-1">Columns: {[...templateVars, 'qty'].join(', ')}</p>
           )}
         </div>
 

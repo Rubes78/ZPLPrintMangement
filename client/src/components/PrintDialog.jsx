@@ -181,7 +181,7 @@ export default function PrintDialog({ isOpen, onClose, onManagePrinters, onBatch
             onClick={() => { onClose(); onBatchPrint(); }}
             className="w-full text-xs text-slate-500 hover:text-slate-300 py-1 transition-colors"
           >
-            Batch print from CSV →
+            Import &amp; Print from CSV →
           </button>
         </div>
       </div>
