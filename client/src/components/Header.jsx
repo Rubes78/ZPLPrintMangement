@@ -181,6 +181,14 @@ export default function Header({
       {/* Spacer */}
       <div className="flex-1" />
 
+      {/* ── New label ── */}
+      <button
+        onClick={onNew}
+        className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1 rounded text-sm"
+      >
+        New
+      </button>
+
       {/* ── Quick-load dropdown ── */}
       {labels.length > 0 && (
         <select
