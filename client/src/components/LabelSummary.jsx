@@ -26,7 +26,7 @@ function elementValue(obj) {
 }
 
 export default function LabelSummary({ labelSettings, canvasObjects }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
 
   const s = labelSettings;
   const wDots = Math.round(s.widthInches * s.dpi);
