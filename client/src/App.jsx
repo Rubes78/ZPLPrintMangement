@@ -91,8 +91,10 @@ export default function App() {
       case 'box':       return canvasRef.current.addBox();
       case 'line':      return canvasRef.current.addLine();
       case 'image':     return extra && canvasRef.current.addImage(extra);
-      case 'variable':
-        return canvasRef.current.addTextField({ text: `{{${extra}}}` });
+      case 'variable': {
+        const prefix = extra.toLowerCase() === 'price' ? '$' : '';
+        return canvasRef.current.addTextField({ text: `${prefix}{{${extra}}}` });
+      }
       case 'variable-barcode':
         if (extra === 'qrcode') return canvasRef.current.addQrCode({ barcodeData: '{{barcode}}' });
         return canvasRef.current.addBarcode(extra, { barcodeData: '{{barcode}}', showText: false });
