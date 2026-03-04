@@ -711,6 +711,49 @@ app.delete('/api/labels/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// ── Print Job History ─────────────────────────────────────────────────────────
+const JOBS_FILE = path.join(DATA_DIR, 'jobs.json');
+function loadJobs() { try { return JSON.parse(fs.readFileSync(JOBS_FILE, 'utf8')); } catch { return []; } }
+function saveJobs(j) { fs.writeFileSync(JOBS_FILE, JSON.stringify(j, null, 2)); }
+
+// List jobs (summary — omit records array for speed)
+app.get('/api/jobs', (req, res) => {
+  const jobs = loadJobs();
+  res.json(jobs.map(({ records, ...j }) => ({ ...j, recordCount: records?.length ?? 0 })));
+});
+
+// Full job including records
+app.get('/api/jobs/:id', (req, res) => {
+  const job = loadJobs().find((j) => j.id === req.params.id);
+  if (!job) return res.status(404).json({ error: 'Not found' });
+  res.json(job);
+});
+
+// Create job
+app.post('/api/jobs', (req, res) => {
+  const jobs = loadJobs();
+  const job = { id: Date.now().toString(), createdAt: new Date().toISOString(), ...req.body };
+  jobs.unshift(job);
+  saveJobs(jobs.slice(0, 200)); // keep last 200
+  res.json({ job });
+});
+
+// Update job (e.g. mark records as printed)
+app.patch('/api/jobs/:id', (req, res) => {
+  const jobs = loadJobs();
+  const idx = jobs.findIndex((j) => j.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'Not found' });
+  jobs[idx] = { ...jobs[idx], ...req.body };
+  saveJobs(jobs);
+  res.json({ job: jobs[idx] });
+});
+
+// Delete job
+app.delete('/api/jobs/:id', (req, res) => {
+  saveJobs(loadJobs().filter((j) => j.id !== req.params.id));
+  res.json({ success: true });
+});
+
 // ── TLS cert download (install in browser/Windows to avoid the HTTPS warning) ─
 app.get('/api/tls-cert', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="zpl-editor-ca.crt"');
