@@ -56,7 +56,7 @@ export default function App() {
     try {
       const res = await fetch('/api/labels');
       const data = await res.json();
-      setLabels(data.labels ?? []);
+      setLabels(Array.isArray(data) ? data : (data.labels ?? []));
     } catch { /* silent */ }
   }
 
