@@ -614,6 +614,67 @@ function discoverViaMdns(timeoutMs = 4000) {
   });
 }
 
+// ── Fields ────────────────────────────────────────────────────────────────────
+const FIELDS_FILE = path.join(DATA_DIR, 'fields.json');
+const DEFAULT_FIELDS = [
+  'CompanyName','Store','Color','Department',
+  'Category','SubCategory','Date','Size','Price','barcode',
+].map(name => ({ name, builtin: true }));
+
+function loadFields() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(FIELDS_FILE, 'utf8'));
+    // Migrate legacy string arrays
+    let fields = raw.map(f => typeof f === 'string' ? { name: f, builtin: false } : f);
+    if (!fields.length) return DEFAULT_FIELDS;
+    // Ensure all default builtins are present (handles additions to DEFAULT_FIELDS)
+    let changed = false;
+    for (const def of DEFAULT_FIELDS) {
+      if (!fields.some(f => f.name === def.name)) {
+        fields.push(def);
+        changed = true;
+      }
+    }
+    if (changed) fs.writeFileSync(FIELDS_FILE, JSON.stringify(fields, null, 2));
+    return fields;
+  } catch { return DEFAULT_FIELDS; }
+}
+function saveFields(fields) {
+  fs.writeFileSync(FIELDS_FILE, JSON.stringify(fields, null, 2));
+}
+
+app.get('/api/fields', (req, res) => res.json(loadFields()));
+
+app.post('/api/fields', (req, res) => {
+  const { name } = req.body;
+  if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Missing name' });
+  const fields = loadFields();
+  if (fields.some(f => f.name.toLowerCase() === name.toLowerCase()))
+    return res.json({ success: true, fields });
+  fields.push({ name, builtin: false });
+  saveFields(fields);
+  res.json({ success: true, fields });
+});
+
+app.patch('/api/fields/:name', (req, res) => {
+  const { newName } = req.body;
+  if (!newName || typeof newName !== 'string') return res.status(400).json({ error: 'Missing newName' });
+  const fields = loadFields();
+  const idx = fields.findIndex(f => f.name === req.params.name);
+  if (idx < 0) return res.status(404).json({ error: 'Not found' });
+  fields[idx] = { ...fields[idx], name: newName };
+  saveFields(fields);
+  res.json({ success: true, fields });
+});
+
+app.delete('/api/fields/:name', (req, res) => {
+  const fields = loadFields();
+  const field = fields.find(f => f.name === req.params.name);
+  if (field?.builtin) return res.status(403).json({ error: 'Cannot delete built-in field' });
+  saveFields(fields.filter(f => f.name !== req.params.name));
+  res.json({ success: true });
+});
+
 // ── Labels library ────────────────────────────────────────────────────────────
 const LABELS_FILE = path.join(DATA_DIR, 'labels.json');
 function loadLabels() {

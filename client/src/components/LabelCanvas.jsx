@@ -20,14 +20,17 @@ const CUSTOM_PROPS = [
   'barcodeHeight', 'moduleWidth', 'showText', 'magnification', 'zplFontHeight',
 ];
 
+const GRID_SIZE = 10; // dots
+
 const LabelCanvas = forwardRef(function LabelCanvas(
-  { labelWidthDots, labelHeightDots, zoom, onObjectSelected, onObjectDeselected, onCanvasChanged },
+  { labelWidthDots, labelHeightDots, zoom, onObjectSelected, onObjectDeselected, onCanvasChanged, snapEnabled, onToggleSnap },
   ref
 ) {
   const canvasElRef = useRef(null);
   const fc = useRef(null); // Fabric.js Canvas instance
   const historyRef = useRef([]); // undo stack (JSON snapshots)
   const redoRef = useRef([]);
+  const snapRef = useRef(snapEnabled);
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -58,6 +61,36 @@ const LabelCanvas = forwardRef(function LabelCanvas(
     canvas.on('object:removed', () => { snap(); notify(); });
     canvas.on('text:changed', notify); // live while editing
 
+    // Snap to grid while dragging
+    canvas.on('object:moving', (e) => {
+      if (!snapRef.current) return;
+      const obj = e.target;
+      obj.set({
+        left: Math.round(obj.left / GRID_SIZE) * GRID_SIZE,
+        top:  Math.round(obj.top  / GRID_SIZE) * GRID_SIZE,
+      });
+    });
+
+    // Draw grid overlay after each render
+    canvas.on('after:render', () => {
+      if (!snapRef.current) return;
+      const ctx = canvas.getContext();
+      const z = canvas.getZoom();
+      const w = canvas.width;
+      const h = canvas.height;
+      const step = GRID_SIZE * z;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+      ctx.lineWidth = 0.5;
+      for (let x = 0; x <= w; x += step) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      }
+      for (let y = 0; y <= h; y += step) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+      ctx.restore();
+    });
+
     // Keyboard shortcuts
     const onKey = (e) => {
       const active = canvas.getActiveObject();
@@ -84,6 +117,12 @@ const LabelCanvas = forwardRef(function LabelCanvas(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Sync snap toggle (no canvas re-init needed) ───────────────────────────
+  useEffect(() => {
+    snapRef.current = snapEnabled;
+    fc.current?.renderAll();
+  }, [snapEnabled]);
 
   // ── Zoom / size changes ───────────────────────────────────────────────────
   useEffect(() => {
@@ -373,7 +412,17 @@ const LabelCanvas = forwardRef(function LabelCanvas(
   }));
 
   return (
-    <div className="flex-1 canvas-scroll-area overflow-auto flex items-start justify-start p-8">
+    <div className="flex-1 canvas-scroll-area overflow-auto relative flex items-start justify-start p-8">
+      {/* Snap toggle */}
+      <button
+        onClick={onToggleSnap}
+        title={snapEnabled ? 'Snap to grid: ON — click to disable' : 'Snap to grid: OFF — click to enable'}
+        className={`absolute top-2 right-2 z-10 text-[10px] font-semibold px-2 py-1 rounded border transition-colors ${
+          snapEnabled
+            ? 'bg-blue-700 border-blue-500 text-white'
+            : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}>
+        {snapEnabled ? '⊞ Grid ON' : '⊞ Grid OFF'}
+      </button>
       <div
         style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.6)' }}
         className="shrink-0"
