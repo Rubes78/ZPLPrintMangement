@@ -11,6 +11,7 @@ import { generateZpl } from './lib/zplGenerator.js';
 import { parseZpl } from './lib/zplParser.js';
 import LabelSummary from './components/LabelSummary.jsx';
 import HelpModal from './components/HelpModal.jsx';
+import BatchPrintDialog from './components/BatchPrintDialog.jsx';
 
 const DEFAULT_SETTINGS = {
   labelName: 'New Label',
@@ -49,6 +50,7 @@ export default function App() {
   const [propertiesTab, setPropertiesTab] = useState('label'); // 'text' | 'label'
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [batchPrintOpen, setBatchPrintOpen] = useState(false);
   const [labels, setLabels] = useState([]);
 
   // Fetch label list for quick-load dropdown
@@ -61,6 +63,20 @@ export default function App() {
   }
 
   useEffect(() => { fetchLabels(); }, []);
+
+  // Ctrl+S to save
+  const handleSaveRef = useRef(null);
+  handleSaveRef.current = handleSave;
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleSaveRef.current?.();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Compute label dimensions in dots
   const labelWidthDots = Math.round(labelSettings.widthInches * labelSettings.dpi);
@@ -153,6 +169,40 @@ export default function App() {
     }
   }
 
+  async function handleSaveAs() {
+    const name = window.prompt('Save as new label:', labelSettings.labelName || 'Untitled');
+    if (!name) return;
+    const canvasJSON = canvasRef.current?.getJSON();
+    try {
+      const res = await fetch('/api/labels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, type: 'canvas', labelSettings: { ...labelSettings, labelName: name }, canvasJSON, zplCode }),
+      });
+      const data = await res.json();
+      if (data.label) {
+        setCurrentLabelId(data.label.id);
+        setLabelSettings((prev) => ({ ...prev, labelName: name }));
+        setIsDirty(false);
+        fetchLabels();
+      }
+    } catch {
+      alert('Failed to save label.');
+    }
+  }
+
+  async function handleDeleteCurrentLabel() {
+    if (!currentLabelId) return;
+    if (!window.confirm(`Delete "${labelSettings.labelName}"?`)) return;
+    try {
+      await fetch(`/api/labels/${currentLabelId}`, { method: 'DELETE' });
+      handleNew();
+      fetchLabels();
+    } catch {
+      alert('Failed to delete label.');
+    }
+  }
+
   async function handleSaveZplToLibrary(zplText, name) {
     try {
       const res = await fetch('/api/labels', {
@@ -168,6 +218,7 @@ export default function App() {
   }
 
   function handleLoadFromLibrary(label) {
+    if (isDirty && !window.confirm('You have unsaved changes. Load this label anyway?')) return;
     if (label.labelSettings) setLabelSettings(label.labelSettings);
     if (label.type === 'zpl') {
       if (label.zplCode) handleImportZpl(label.zplCode);
@@ -179,6 +230,7 @@ export default function App() {
   }
 
   function handleNew() {
+    if (isDirty && !window.confirm('You have unsaved changes. Start a new label anyway?')) return;
     canvasRef.current?.clearAll();
     setLabelSettings(DEFAULT_SETTINGS);
     setSelectedObject(null);
@@ -243,10 +295,13 @@ export default function App() {
         onNew={handleNew}
         onLoadLabel={handleLoadFromLibrary}
         onSave={handleSave}
+        onSaveAs={handleSaveAs}
+        onDeleteLabel={handleDeleteCurrentLabel}
         onLibrary={() => setLibraryOpen(true)}
         onClear={handleClear}
         onManagePrinters={() => setPrintersOpen(true)}
         onPrint={() => setPrintOpen(true)}
+        onBatchPrint={() => setBatchPrintOpen(true)}
         onHelp={() => setHelpOpen(true)}
         isSaved={!!currentLabelId && !isDirty}
       />
@@ -321,6 +376,7 @@ export default function App() {
                       onUpdate={handlePropertiesUpdate}
                       onRebuildBarcode={handleRebuildBarcode}
                       onSettingsChange={handleSettingsChange}
+                      onToggleLock={() => canvasRef.current?.toggleLock()}
                     />
                   )
                 }
@@ -341,6 +397,14 @@ export default function App() {
       </div>
 
       <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+
+      <BatchPrintDialog
+        isOpen={batchPrintOpen}
+        onClose={() => setBatchPrintOpen(false)}
+        canvasObjects={canvasObjects}
+        labelSettings={labelSettings}
+        generateZpl={generateZpl}
+      />
 
       <LabelLibrary
         isOpen={libraryOpen}

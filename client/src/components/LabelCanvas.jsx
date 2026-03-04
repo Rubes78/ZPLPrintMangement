@@ -17,7 +17,7 @@ import {
 
 const CUSTOM_PROPS = [
   'elementType', 'barcodeType', 'barcodeData', 'fieldName',
-  'barcodeHeight', 'moduleWidth', 'showText', 'magnification', 'zplFontHeight', 'zplTextAlign',
+  'barcodeHeight', 'moduleWidth', 'showText', 'magnification', 'zplFontHeight', 'zplTextAlign', 'locked',
 ];
 
 const GRID_SIZE = 10; // dots
@@ -192,6 +192,45 @@ const LabelCanvas = forwardRef(function LabelCanvas(
     }
 
     canvas.renderAll();
+    onCanvasChanged(canvas.getObjects());
+  }
+
+  // ── Z-order ───────────────────────────────────────────────────────────────
+  function bringForward() {
+    const canvas = fc.current;
+    const obj = canvas.getActiveObject();
+    if (!obj || obj.type === 'activeSelection') return;
+    canvas.bringForward(obj);
+    canvas.renderAll();
+    onCanvasChanged(canvas.getObjects());
+  }
+
+  function sendBackward() {
+    const canvas = fc.current;
+    const obj = canvas.getActiveObject();
+    if (!obj || obj.type === 'activeSelection') return;
+    canvas.sendBackwards(obj);
+    canvas.renderAll();
+    onCanvasChanged(canvas.getObjects());
+  }
+
+  // ── Locking ───────────────────────────────────────────────────────────────
+  function toggleLock() {
+    const canvas = fc.current;
+    const obj = canvas.getActiveObject();
+    if (!obj || obj.type === 'activeSelection') return;
+    const locked = !obj.locked;
+    obj.set({
+      locked,
+      lockMovementX: locked,
+      lockMovementY: locked,
+      lockScalingX: locked,
+      lockScalingY: locked,
+      lockRotation: locked,
+      hasControls: !locked,
+    });
+    canvas.renderAll();
+    onObjectSelected({ ...obj });
     onCanvasChanged(canvas.getObjects());
   }
 
@@ -440,6 +479,9 @@ const LabelCanvas = forwardRef(function LabelCanvas(
     },
 
     align,
+    bringForward,
+    sendBackward,
+    toggleLock,
 
     clearAll() {
       fc.current.clear();
@@ -481,6 +523,20 @@ const LabelCanvas = forwardRef(function LabelCanvas(
             </svg>
           </AlignBtn>
         ))}
+        <div className="w-px h-4 bg-slate-600 mx-0.5" />
+        <AlignBtn title="Bring forward (raise one layer)" onClick={bringForward}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+            <rect x="3" y="7" width="11" height="11" rx="1"/><rect x="10" y="4" width="11" height="11" rx="1" fill="currentColor" fillOpacity="0.3"/>
+            <path d="M15 4v3M20 9h-3"/>
+          </svg>
+        </AlignBtn>
+        <AlignBtn title="Send backward (lower one layer)" onClick={sendBackward}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+            <rect x="10" y="7" width="11" height="11" rx="1"/><rect x="3" y="4" width="11" height="11" rx="1" fill="currentColor" fillOpacity="0.3"/>
+            <path d="M9 15v3M4 20h3"/>
+          </svg>
+        </AlignBtn>
+
         <button
           onClick={onToggleSnap}
           title={snapEnabled ? 'Snap to grid: ON — click to disable' : 'Snap to grid: OFF — click to enable'}

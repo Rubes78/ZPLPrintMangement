@@ -4,6 +4,8 @@ export default function LabelLibrary({ isOpen, onClose, onLoad, onNew }) {
   const [labels, setLabels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const fetchLabels = useCallback(async () => {
     setLoading(true);
@@ -25,6 +27,25 @@ export default function LabelLibrary({ isOpen, onClose, onLoad, onNew }) {
     setLabels((prev) => prev.filter((l) => l.id !== id));
   }
 
+  function startRename(label) {
+    setRenamingId(label.id);
+    setRenameValue(label.name);
+  }
+
+  async function commitRename(label) {
+    const name = renameValue.trim();
+    if (!name || name === label.name) { setRenamingId(null); return; }
+    try {
+      await fetch('/api/labels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: label.id, name, type: label.type, labelSettings: label.labelSettings, canvasJSON: label.canvasJSON, zplCode: label.zplCode }),
+      });
+      setLabels((prev) => prev.map((l) => l.id === label.id ? { ...l, name } : l));
+    } catch {}
+    setRenamingId(null);
+  }
+
   const filtered = labels.filter((l) =>
     l.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -41,12 +62,7 @@ export default function LabelLibrary({ isOpen, onClose, onLoad, onNew }) {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 shrink-0">
           <h2 className="text-sm font-semibold text-slate-100">Label Library</h2>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-100 text-lg leading-none"
-          >
-            ✕
-          </button>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-100 text-lg leading-none">✕</button>
         </div>
 
         {/* New label */}
@@ -88,22 +104,40 @@ export default function LabelLibrary({ isOpen, onClose, onLoad, onNew }) {
           ) : (
             <div className="divide-y divide-slate-700/60">
               {filtered.map((label) => (
-                <div
-                  key={label.id}
-                  className="px-3 py-3 hover:bg-slate-700/40 transition-colors group"
-                >
+                <div key={label.id} className="px-3 py-3 hover:bg-slate-700/40 transition-colors group">
                   <div className="flex items-start gap-2">
+                    {/* Thumbnail */}
+                    {label.zplCode && label.labelSettings && (
+                      <LabelThumbnail label={label} />
+                    )}
+
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium text-slate-100 truncate">
-                          {label.name}
-                        </span>
-                        {label.type === 'zpl' && (
-                          <span className="text-xs px-1.5 py-0 rounded bg-amber-800/60 text-amber-400 border border-amber-700/50 shrink-0">
-                            ZPL
-                          </span>
-                        )}
-                      </div>
+                      {/* Name / rename */}
+                      {renamingId === label.id ? (
+                        <input
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onBlur={() => commitRename(label)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitRename(label);
+                            if (e.key === 'Escape') setRenamingId(null);
+                          }}
+                          className="w-full bg-slate-700 border border-blue-500 rounded px-1.5 py-0.5 text-sm text-slate-100 focus:outline-none mb-0.5"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium text-slate-100 truncate">{label.name}</span>
+                          {label.type === 'zpl' && (
+                            <span className="text-xs px-1.5 py-0 rounded bg-amber-800/60 text-amber-400 border border-amber-700/50 shrink-0">ZPL</span>
+                          )}
+                          <button
+                            onClick={() => startRename(label)}
+                            title="Rename"
+                            className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-slate-200 transition-opacity shrink-0 text-xs leading-none"
+                          >✎</button>
+                        </div>
+                      )}
                       {label.labelSettings && (
                         <div className="text-xs text-slate-400 mt-0.5">
                           {label.labelSettings.widthInches}"×{label.labelSettings.heightInches}" · {label.labelSettings.dpi} dpi
@@ -115,6 +149,7 @@ export default function LabelLibrary({ isOpen, onClose, onLoad, onNew }) {
                         })}
                       </div>
                     </div>
+
                     <div className="flex gap-1 shrink-0 mt-0.5">
                       <button
                         onClick={() => { onLoad(label); onClose(); }}
@@ -126,9 +161,7 @@ export default function LabelLibrary({ isOpen, onClose, onLoad, onNew }) {
                         onClick={() => handleDelete(label.id, label.name)}
                         className="text-xs px-2 py-1 bg-slate-700 hover:bg-red-900 text-slate-400 hover:text-red-300 rounded transition-colors"
                         title="Delete label"
-                      >
-                        ✕
-                      </button>
+                      >✕</button>
                     </div>
                   </div>
                 </div>
@@ -147,8 +180,49 @@ export default function LabelLibrary({ isOpen, onClose, onLoad, onNew }) {
         )}
       </div>
 
-      {/* Click-outside backdrop (rest of screen) */}
+      {/* Click-outside backdrop */}
       <div className="flex-1" />
+    </div>
+  );
+}
+
+function LabelThumbnail({ label }) {
+  const [src, setSrc] = useState(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const resp = await fetch('/api/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            zpl: label.zplCode,
+            widthInches: label.labelSettings.widthInches,
+            heightInches: label.labelSettings.heightInches,
+            dpi: label.labelSettings.dpi,
+          }),
+        });
+        if (!resp.ok) throw new Error();
+        const blob = await resp.blob();
+        if (!cancelled) setSrc(URL.createObjectURL(blob));
+      } catch {
+        if (!cancelled) setError(true);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [label.id, label.zplCode]);
+
+  if (error) return null;
+
+  return (
+    <div className="shrink-0 w-12 h-16 bg-slate-700 border border-slate-600 rounded flex items-center justify-center overflow-hidden">
+      {src
+        ? <img src={src} alt="" className="max-w-full max-h-full object-contain" style={{ imageRendering: 'pixelated' }} />
+        : <div className="w-4 h-4 border-2 border-slate-500 border-t-blue-400 rounded-full animate-spin" />
+      }
     </div>
   );
 }

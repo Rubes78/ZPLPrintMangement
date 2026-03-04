@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-export default function PropertiesPanel({ selectedObject, labelSettings, onUpdate, onRebuildBarcode, onSettingsChange }) {
+export default function PropertiesPanel({ selectedObject, labelSettings, onUpdate, onRebuildBarcode, onSettingsChange, onToggleLock }) {
   const [local, setLocal] = useState({});
 
   // Sync local state when selected object changes
@@ -24,6 +24,7 @@ export default function PropertiesPanel({ selectedObject, labelSettings, onUpdat
       fieldName: selectedObject.fieldName ?? '',
       strokeWidth: selectedObject.strokeWidth ?? 3,
       fill: selectedObject.fill === 'transparent' ? 'transparent' : (selectedObject.fill ?? '#000000'),
+      locked: selectedObject.locked ?? false,
     });
   }, [selectedObject]);
 
@@ -75,6 +76,18 @@ export default function PropertiesPanel({ selectedObject, labelSettings, onUpdat
               </button>
             ))}
           </div>
+        </Field>
+        <Field label="">
+          <button
+            onClick={() => { setL('locked', !local.locked); onToggleLock?.(); }}
+            title={local.locked ? 'Unlock element — allow moving and resizing' : 'Lock element — prevent accidental movement'}
+            className={`w-full py-1 rounded text-xs border transition-colors ${
+              local.locked
+                ? 'bg-amber-700 border-amber-600 text-white'
+                : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'
+            }`}>
+            {local.locked ? '🔒 Locked — click to unlock' : '🔓 Unlocked — click to lock'}
+          </button>
         </Field>
       </Section>
 

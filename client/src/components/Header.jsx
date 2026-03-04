@@ -16,10 +16,13 @@ export default function Header({
   onZoomChange,
   onOrientationChange,
   onSave,
+  onSaveAs,
+  onDeleteLabel,
   onLibrary,
   onClear,
   onManagePrinters,
   onPrint,
+  onBatchPrint,
   onHelp,
   isSaved,
   labels = [],
@@ -189,8 +192,9 @@ export default function Header({
         New
       </button>
 
-      {/* ── Quick-load dropdown ── */}
+      {/* ── Quick-load dropdown + delete ── */}
       {labels.length > 0 && (
+        <div className="flex items-center gap-1">
         <select
           value={currentLabelId ?? ''}
           onChange={(e) => {
@@ -205,6 +209,17 @@ export default function Header({
             <option key={l.id} value={l.id}>{l.name}</option>
           ))}
         </select>
+        {currentLabelId && (
+          <IconBtn onClick={onDeleteLabel} title="Delete this label" danger>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14H6L5 6" />
+              <path d="M10 11v6M14 11v6" />
+              <path d="M9 6V4h6v2" />
+            </svg>
+          </IconBtn>
+        )}
+        </div>
       )}
 
       {/* ── Primary actions (right of spacer) ── */}
@@ -220,10 +235,24 @@ export default function Header({
         {isSaved ? 'Saved ✓' : 'Save'}
       </button>
       <button
+        onClick={onSaveAs}
+        title="Save as a new label"
+        className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded text-sm"
+      >
+        Save As
+      </button>
+      <button
         onClick={onPrint}
         className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1 rounded text-sm font-semibold"
       >
         Print
+      </button>
+      <button
+        onClick={onBatchPrint}
+        title="Print multiple labels from CSV data"
+        className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded text-sm"
+      >
+        Batch
       </button>
 
       <div className="h-5 border-l border-slate-700" />
