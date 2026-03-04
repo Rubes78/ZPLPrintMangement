@@ -55,7 +55,7 @@ export default function App() {
   // Auto-fit zoom when label size changes
   useEffect(() => {
     // Available canvas area is roughly viewport minus sidebar/panels
-    const availW = window.innerWidth - 172 - 460 - 32; // palette + right panel + padding
+    const availW = window.innerWidth - 172 - 380 - 48; // palette + right panel + padding
     const availH = window.innerHeight - 48 - 16; // header + padding
     const fitZoom = Math.min(availW / labelWidthDots, availH / labelHeightDots, 1) * 0.95;
     setZoom(Math.max(0.1, parseFloat(fitZoom.toFixed(2))));
@@ -255,7 +255,7 @@ export default function App() {
         </div>
 
         {/* Right: Properties + ZPL */}
-        <aside className="w-[460px] flex flex-col bg-slate-900 border-l border-slate-700 overflow-hidden shrink-0">
+        <aside className="w-[380px] flex flex-col bg-slate-900 border-l border-slate-700 overflow-hidden shrink-0">
           {/* Properties panel — collapsible, tabbed */}
           <div className="flex flex-col border-b border-slate-700 shrink-0 overflow-hidden"
                style={propertiesOpen ? { height: '42%' } : {}}>

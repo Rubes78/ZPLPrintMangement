@@ -455,14 +455,13 @@ const LabelCanvas = forwardRef(function LabelCanvas(
   }));
 
   return (
-    <div className="flex-1 canvas-scroll-area overflow-auto relative flex items-start justify-start pt-12 px-8 pb-8">
-      {/* Toolbar: alignment + snap */}
-      <div className="absolute top-2 left-2 right-2 z-10 flex items-center gap-1">
-        {/* Horizontal alignment */}
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Toolbar — static header row, no absolute positioning needed */}
+      <div className="flex items-center gap-1 px-2 py-1.5 bg-slate-900 border-b border-slate-700 shrink-0">
         {[
-          { dir: 'left',    title: 'Align left',            svg: 'M3 5h12M3 9h8M3 13h12M3 17h8M3 3v18' },
-          { dir: 'centerH', title: 'Center horizontally',   svg: 'M12 3v18M5 7h14M8 12h8M5 17h14' },
-          { dir: 'right',   title: 'Align right',           svg: 'M21 5H9M21 9h-8M21 13H9M21 17h-8M21 3v18' },
+          { dir: 'left',    title: 'Align left',          svg: 'M3 5h12M3 9h8M3 13h12M3 17h8M3 3v18' },
+          { dir: 'centerH', title: 'Center horizontally', svg: 'M12 3v18M5 7h14M8 12h8M5 17h14' },
+          { dir: 'right',   title: 'Align right',         svg: 'M21 5H9M21 9h-8M21 13H9M21 17h-8M21 3v18' },
         ].map(({ dir, title, svg }) => (
           <AlignBtn key={dir} title={title} onClick={() => align(dir)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="w-3.5 h-3.5">
@@ -471,11 +470,10 @@ const LabelCanvas = forwardRef(function LabelCanvas(
           </AlignBtn>
         ))}
         <div className="w-px h-4 bg-slate-600 mx-0.5" />
-        {/* Vertical alignment */}
         {[
-          { dir: 'top',     title: 'Align top',             svg: 'M5 3h14M7 3v12M12 3v8M17 3v12M3 3h18' },
-          { dir: 'middleV', title: 'Center vertically',     svg: 'M3 12h18M7 5v14M12 8v8M17 5v14' },
-          { dir: 'bottom',  title: 'Align bottom',          svg: 'M5 21h14M7 21V9M12 21v-8M17 21V9M3 21h18' },
+          { dir: 'top',     title: 'Align top',         svg: 'M5 3h14M7 3v12M12 3v8M17 3v12M3 3h18' },
+          { dir: 'middleV', title: 'Center vertically', svg: 'M3 12h18M7 5v14M12 8v8M17 5v14' },
+          { dir: 'bottom',  title: 'Align bottom',      svg: 'M5 21h14M7 21V9M12 21v-8M17 21V9M3 21h18' },
         ].map(({ dir, title, svg }) => (
           <AlignBtn key={dir} title={title} onClick={() => align(dir)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="w-3.5 h-3.5">
@@ -483,7 +481,6 @@ const LabelCanvas = forwardRef(function LabelCanvas(
             </svg>
           </AlignBtn>
         ))}
-        {/* Snap toggle — pushed right */}
         <button
           onClick={onToggleSnap}
           title={snapEnabled ? 'Snap to grid: ON — click to disable' : 'Snap to grid: OFF — click to enable'}
@@ -494,11 +491,14 @@ const LabelCanvas = forwardRef(function LabelCanvas(
           {snapEnabled ? '⊞ Grid ON' : '⊞ Grid OFF'}
         </button>
       </div>
-      <div
-        style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.6)' }}
-        className="shrink-0"
-      >
-        <canvas ref={canvasElRef} />
+
+      {/* Canvas scroll area — label centered, darker bg makes it pop */}
+      <div className="flex-1 overflow-auto bg-[#111318]">
+        <div className="min-h-full flex items-center justify-center p-6">
+          <div style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.7)' }} className="shrink-0">
+            <canvas ref={canvasElRef} />
+          </div>
+        </div>
       </div>
     </div>
   );
