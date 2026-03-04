@@ -15,7 +15,6 @@ export default function Header({
   zoom,
   onZoomChange,
   onOrientationChange,
-  onNew,
   onSave,
   onLibrary,
   onClear,
@@ -158,17 +157,31 @@ export default function Header({
         >1:1</button>
       </div>
 
+      {/* ── Icon actions (left of spacer) ── */}
+      <div className="flex items-center gap-1">
+        <IconBtn onClick={onLibrary} title="Label library">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <path d="M3 5h18M3 10h18M3 15h18M3 20h18" />
+          </svg>
+        </IconBtn>
+        <IconBtn onClick={onClear} title="Clear canvas" danger>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v6M14 11v6" />
+            <path d="M9 6V4h6v2" />
+          </svg>
+        </IconBtn>
+      </div>
+
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Actions */}
-      <button onClick={onNew} className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1 rounded text-sm">
-        New
-      </button>
+      {/* ── Primary actions (right of spacer) ── */}
       <button
         onClick={onSave}
         title="Save to library"
-        className={`px-3 py-1 rounded text-sm transition-colors ${
+        className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
           isSaved
             ? 'bg-green-700 hover:bg-green-600 text-white'
             : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
@@ -176,26 +189,41 @@ export default function Header({
       >
         {isSaved ? 'Saved ✓' : 'Save'}
       </button>
-      <button onClick={onLibrary} className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1 rounded text-sm">
-        Library
-      </button>
-      <button onClick={onClear} className="bg-slate-700 hover:bg-red-900 text-slate-200 px-3 py-1 rounded text-sm">
-        Clear
-      </button>
-      <button onClick={onManagePrinters} className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1 rounded text-sm">
-        Printers
-      </button>
       <button
         onClick={onPrint}
         className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1 rounded text-sm font-semibold"
       >
         Print
       </button>
-      <button
-        onClick={onHelp}
-        title="User manual"
-        className="bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white w-7 h-7 rounded-full text-sm font-bold flex items-center justify-center border border-slate-600 hover:border-slate-400 transition-colors"
-      >?</button>
+
+      <div className="h-5 border-l border-slate-700" />
+
+      {/* ── Utility icons ── */}
+      <IconBtn onClick={onManagePrinters} title="Printer settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M2 12h2M20 12h2M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41" />
+        </svg>
+      </IconBtn>
+      <IconBtn onClick={onHelp} title="User manual">
+        <span className="text-sm font-bold leading-none">?</span>
+      </IconBtn>
     </header>
+  );
+}
+
+function IconBtn({ onClick, title, danger = false, children }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`w-7 h-7 flex items-center justify-center rounded border transition-colors ${
+        danger
+          ? 'text-slate-500 hover:text-red-400 bg-slate-800 border-slate-700 hover:border-red-700 hover:bg-red-900/20'
+          : 'text-slate-400 hover:text-slate-100 bg-slate-800 border-slate-700 hover:border-slate-500 hover:bg-slate-700'
+      }`}
+    >
+      {children}
+    </button>
   );
 }

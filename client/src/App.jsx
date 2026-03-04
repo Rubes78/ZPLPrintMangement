@@ -226,7 +226,6 @@ export default function App() {
         zoom={zoom}
         onZoomChange={setZoom}
         onOrientationChange={handleOrientationChange}
-        onNew={handleNew}
         onSave={handleSave}
         onLibrary={() => setLibraryOpen(true)}
         onClear={handleClear}
