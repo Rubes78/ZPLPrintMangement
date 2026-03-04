@@ -24,6 +24,7 @@ export default function Header({
   isSaved,
   labels = [],
   onLoadLabel,
+  onNew,
   currentLabelId,
 }) {
   const { labelName, widthInches, heightInches, dpi } = labelSettings;
@@ -185,6 +186,7 @@ export default function Header({
         <select
           value={currentLabelId ?? ''}
           onChange={(e) => {
+            if (e.target.value === '__new__') { onNew(); return; }
             const label = labels.find((l) => l.id === e.target.value);
             if (label) onLoadLabel(label);
           }}
@@ -192,6 +194,7 @@ export default function Header({
           title="Open a saved label"
         >
           <option value="" disabled>Open label…</option>
+          <option value="__new__">+ New label</option>
           {labels.map((l) => (
             <option key={l.id} value={l.id}>{l.name}</option>
           ))}

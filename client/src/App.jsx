@@ -240,6 +240,7 @@ export default function App() {
         onOrientationChange={handleOrientationChange}
         labels={labels}
         currentLabelId={currentLabelId}
+        onNew={handleNew}
         onLoadLabel={handleLoadFromLibrary}
         onSave={handleSave}
         onLibrary={() => setLibraryOpen(true)}
