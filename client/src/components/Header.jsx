@@ -22,6 +22,7 @@ export default function Header({
   onClear,
   onManagePrinters,
   onPrint,
+  onBatchPrint,
   onHelp,
   isSaved,
   labels = [],
@@ -41,7 +42,7 @@ export default function Header({
   }
 
   return (
-    <header className="flex items-center gap-3 bg-slate-900 border-b border-slate-700 px-4 py-2 shrink-0 flex-wrap">
+    <header className="flex items-center gap-3 bg-slate-900 border-b border-slate-700 px-4 py-2 shrink-0 overflow-x-auto">
       {/* Logo */}
       <div className="flex items-center gap-2 mr-2">
         <span className="text-xl">🏷️</span>
@@ -242,14 +243,22 @@ export default function Header({
       </button>
       <button
         onClick={onPrint}
-        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1 rounded text-sm font-semibold"
+        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1 rounded text-sm font-semibold shrink-0"
       >
         Print
       </button>
+      <button
+        onClick={onBatchPrint}
+        title="Print multiple labels from CSV data"
+        className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded text-sm shrink-0"
+      >
+        Batch Print
+      </button>
 
-      <div className="h-5 border-l border-slate-700" />
+      <div className="h-5 border-l border-slate-700 shrink-0" />
 
       {/* ── Utility icons ── */}
+      <div className="flex items-center gap-1 shrink-0">
       <IconBtn onClick={onManagePrinters} title="Printer settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
           <circle cx="12" cy="12" r="3" />
@@ -259,6 +268,7 @@ export default function Header({
       <IconBtn onClick={onHelp} title="User manual">
         <span className="text-sm font-bold leading-none">?</span>
       </IconBtn>
+      </div>
     </header>
   );
 }

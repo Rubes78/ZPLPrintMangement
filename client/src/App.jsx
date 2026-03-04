@@ -301,6 +301,7 @@ export default function App() {
         onClear={handleClear}
         onManagePrinters={() => setPrintersOpen(true)}
         onPrint={() => setPrintOpen(true)}
+        onBatchPrint={() => setBatchPrintOpen(true)}
         onHelp={() => setHelpOpen(true)}
         isSaved={!!currentLabelId && !isDirty}
       />
