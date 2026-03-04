@@ -853,6 +853,10 @@ function HistoryView() {
   const [reprinters, setReprinters]   = useState([]);
   const [reprintPrinter, setReprintPrinter] = useState(null);
   const [loading, setLoading]         = useState(true);
+  // { [jobId]: Set<recordIndex> } — which records are checked per job
+  const [selectedRecs, setSelectedRecs] = useState({});
+  // { [jobId]: { sending, done, total, errors, msg } } — inline reprint status
+  const [reprintStatus, setReprintStatus] = useState({});
 
   useEffect(() => {
     fetchJobs();
@@ -876,6 +880,57 @@ function HistoryView() {
     }
   }
 
+  // Fetch full job detail (expanding if needed), return it
+  async function getDetail(job) {
+    if (expandedData[job.id]) return expandedData[job.id];
+    const data = await fetch(`/api/jobs/${job.id}`).then((r) => r.json()).catch(() => null);
+    if (data) setExpandedData((prev) => ({ ...prev, [job.id]: data }));
+    return data;
+  }
+
+  // Build ZPL for a record — use stored zpl if available, else apply vars to template
+  function buildZpl(detail, rec) {
+    if (rec.zpl) return rec.zpl;
+    if (detail.zplTemplate) {
+      let zpl = detail.zplTemplate;
+      Object.entries(rec.vars || {}).forEach(([k, v]) => {
+        zpl = zpl.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), String(v ?? ''));
+      });
+      const qty = rec.qty || 1;
+      return qty > 1 ? zpl.replace(/(\^XZ)/i, `^PQ${qty},0,1,Y$1`) : zpl;
+    }
+    return null;
+  }
+
+  async function reprintRecords(job, indices) {
+    if (!reprintPrinter) {
+      setReprintStatus((p) => ({ ...p, [job.id]: { msg: 'Select a printer first.', error: true } }));
+      return;
+    }
+    const detail = await getDetail(job);
+    if (!detail?.records?.length) {
+      setReprintStatus((p) => ({ ...p, [job.id]: { msg: 'No records found.', error: true } }));
+      return;
+    }
+    const recs = indices ? indices.map((i) => detail.records[i]) : detail.records;
+    setReprintStatus((p) => ({ ...p, [job.id]: { sending: true, done: 0, total: recs.length, errors: 0 } }));
+
+    let done = 0, errors = 0;
+    for (const rec of recs) {
+      const zpl = buildZpl(detail, rec);
+      if (!zpl) { errors++; } else {
+        try { await sendZpl(zpl, reprintPrinter); }
+        catch { errors++; }
+      }
+      done++;
+      setReprintStatus((p) => ({ ...p, [job.id]: { sending: true, done, total: recs.length, errors } }));
+    }
+    setReprintStatus((p) => ({
+      ...p,
+      [job.id]: { sending: false, done, total: recs.length, errors, msg: errors === 0 ? `Sent ${done} to ${reprintPrinter.name}` : `${done - errors} sent, ${errors} failed` },
+    }));
+  }
+
   async function deleteJob(id) {
     if (!window.confirm('Delete this print job from history?')) return;
     await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
@@ -883,24 +938,19 @@ function HistoryView() {
     if (expanded === id) setExpanded(null);
   }
 
-  async function reprintRecord(rec) {
-    if (!reprintPrinter) return alert('Select a reprint printer first.');
-    if (!rec.zpl) return alert('No ZPL stored for this record.');
-    try {
-      await sendZpl(rec.zpl, reprintPrinter);
-      alert(`Sent to ${reprintPrinter.name}`);
-    } catch (e) { alert(`Failed: ${e.message}`); }
+  function toggleRec(jobId, idx) {
+    setSelectedRecs((prev) => {
+      const cur = new Set(prev[jobId] || []);
+      cur.has(idx) ? cur.delete(idx) : cur.add(idx);
+      return { ...prev, [jobId]: cur };
+    });
   }
-
-  async function reprintAll(job) {
-    if (!reprintPrinter) return alert('Select a reprint printer first.');
-    const detail = expandedData[job.id];
-    if (!detail?.records?.length) return alert('No records found.');
-    for (const rec of detail.records) {
-      if (!rec.zpl) continue;
-      try { await sendZpl(rec.zpl, reprintPrinter); } catch { /* continue */ }
-    }
-    alert(`Sent ${detail.records.length} records to ${reprintPrinter.name}`);
+  function toggleAllRecs(jobId, total) {
+    setSelectedRecs((prev) => {
+      const cur = prev[jobId] || new Set();
+      const allSel = cur.size === total;
+      return { ...prev, [jobId]: allSel ? new Set() : new Set(Array.from({ length: total }, (_, i) => i)) };
+    });
   }
 
   const labelNames = [...new Set(jobs.map((j) => j.labelName).filter(Boolean))].sort();
@@ -1012,8 +1062,13 @@ function HistoryView() {
         )}
         <div className="divide-y divide-slate-800">
           {filtered.map((job) => {
-            const isExpanded = expanded === job.id;
-            const detail     = expandedData[job.id];
+            const isExpanded  = expanded === job.id;
+            const detail      = expandedData[job.id];
+            const jobSelRecs  = selectedRecs[job.id] || new Set();
+            const rs          = reprintStatus[job.id];
+            const isSending   = rs?.sending;
+            const hasSelected = jobSelRecs.size > 0;
+
             return (
               <div key={job.id}>
                 {/* Job row */}
@@ -1026,13 +1081,41 @@ function HistoryView() {
                       <StatusBadge printed={job.totalPrinted} failed={job.totalFailed} />
                     </div>
                     <div className="text-xs text-slate-500 mt-0.5">
-                      {new Date(job.createdAt).toLocaleString()} · {job.printer?.name || 'Unknown printer'} · {(job.recordCount || (job.totalPrinted + job.totalFailed))} records
+                      {new Date(job.createdAt).toLocaleString()} · {job.printer?.name || 'Unknown printer'} · {job.recordCount || (job.totalPrinted + job.totalFailed)} records
                     </div>
+                    {/* Inline reprint status */}
+                    {rs && (
+                      <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+                        {isSending ? (
+                          <div className="flex items-center gap-2">
+                            <div className="h-1 flex-1 bg-slate-700 rounded-full overflow-hidden">
+                              <div className="h-full bg-blue-500 transition-all" style={{ width: `${(rs.done / rs.total) * 100}%` }} />
+                            </div>
+                            <span className="text-[10px] text-slate-400">{rs.done}/{rs.total}</span>
+                          </div>
+                        ) : (
+                          <span className={`text-[10px] ${rs.error ? 'text-red-400' : rs.errors > 0 ? 'text-amber-400' : 'text-green-400'}`}>
+                            {rs.msg}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => reprintAll(job)}
-                      className="text-xs text-slate-500 hover:text-blue-400 px-2 py-1 rounded hover:bg-slate-700 transition-colors"
-                      title="Reprint all records">Reprint All</button>
+                    {hasSelected && (
+                      <button
+                        onClick={() => reprintRecords(job, [...jobSelRecs].sort((a, b) => a - b))}
+                        disabled={isSending}
+                        className="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 rounded hover:bg-slate-700 transition-colors disabled:opacity-40">
+                        Reprint Selected ({jobSelRecs.size})
+                      </button>
+                    )}
+                    <button
+                      onClick={() => reprintRecords(job, null)}
+                      disabled={isSending}
+                      className="text-xs text-slate-500 hover:text-blue-400 px-2 py-1 rounded hover:bg-slate-700 transition-colors disabled:opacity-40">
+                      {isSending ? `${rs.done}/${rs.total}…` : 'Reprint All'}
+                    </button>
                     <button onClick={() => deleteJob(job.id)}
                       className="text-slate-600 hover:text-red-400 transition-colors w-7 h-7 flex items-center justify-center rounded hover:bg-slate-700"
                       title="Delete job">✕</button>
@@ -1046,40 +1129,51 @@ function HistoryView() {
                       <table className="text-xs text-slate-300 min-w-full border-collapse">
                         <thead>
                           <tr className="bg-slate-900/80">
-                            <th className="px-4 py-2 text-left border-b border-slate-700 text-slate-500 font-semibold w-10">#</th>
+                            <th className="w-8 px-3 py-2 text-left border-b border-r border-slate-700">
+                              <input type="checkbox"
+                                checked={jobSelRecs.size === detail.records.length}
+                                onChange={() => toggleAllRecs(job.id, detail.records.length)}
+                                className="accent-blue-400" />
+                            </th>
+                            <th className="px-4 py-2 text-left border-b border-r border-slate-700 text-slate-500 font-semibold w-10">#</th>
                             {Object.keys(detail.records[0]?.vars || {}).map((k) => (
-                              <th key={k} className="px-4 py-2 text-left border-b border-slate-700 text-slate-500 font-semibold font-mono">{k}</th>
+                              <th key={k} className="px-4 py-2 text-left border-b border-r border-slate-700 text-slate-500 font-semibold font-mono">{k}</th>
                             ))}
-                            <th className="px-4 py-2 text-left border-b border-slate-700 text-slate-500 font-semibold w-12">Qty</th>
+                            <th className="px-4 py-2 text-left border-b border-r border-slate-700 text-slate-500 font-semibold w-12">Qty</th>
                             <th className="px-4 py-2 text-left border-b border-slate-700 text-slate-500 font-semibold w-24">Status</th>
-                            <th className="px-4 py-2 border-b border-slate-700 w-20" />
                           </tr>
                         </thead>
                         <tbody>
-                          {detail.records.map((rec, i) => (
-                            <tr key={i} className="border-b border-slate-800/60 hover:bg-slate-800/20">
-                              <td className="px-4 py-1.5 text-slate-600">{i + 1}</td>
-                              {Object.values(rec.vars || {}).map((v, vi) => (
-                                <td key={vi} className="px-4 py-1.5 text-slate-300 font-mono">{v}</td>
-                              ))}
-                              <td className="px-4 py-1.5">{rec.qty}</td>
-                              <td className="px-4 py-1.5">
-                                {rec.status === 'printed'
-                                  ? <span className="text-green-400">✓ Printed</span>
-                                  : <span className="text-red-400">✗ Failed</span>}
-                              </td>
-                              <td className="px-4 py-1.5 text-right">
-                                {rec.zpl && (
-                                  <button onClick={() => reprintRecord(rec)}
-                                    className="text-xs text-slate-500 hover:text-blue-400 transition-colors px-2 py-0.5 rounded hover:bg-slate-700">
-                                    Reprint
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
+                          {detail.records.map((rec, i) => {
+                            const isChecked = jobSelRecs.has(i);
+                            return (
+                              <tr key={i}
+                                className={`border-b border-slate-800/60 cursor-pointer transition-colors ${isChecked ? 'bg-blue-950/20' : 'hover:bg-slate-800/20'}`}
+                                onClick={() => toggleRec(job.id, i)}>
+                                <td className="px-3 py-1.5 border-r border-slate-800" onClick={(e) => e.stopPropagation()}>
+                                  <input type="checkbox" checked={isChecked} onChange={() => toggleRec(job.id, i)} className="accent-blue-400" />
+                                </td>
+                                <td className="px-4 py-1.5 border-r border-slate-800 text-slate-600">{i + 1}</td>
+                                {Object.values(rec.vars || {}).map((v, vi) => (
+                                  <td key={vi} className="px-4 py-1.5 border-r border-slate-800 text-slate-300 font-mono">{v}</td>
+                                ))}
+                                <td className="px-4 py-1.5 border-r border-slate-800">{rec.qty}</td>
+                                <td className="px-4 py-1.5">
+                                  {rec.status === 'printed'
+                                    ? <span className="text-green-400">✓ Printed</span>
+                                    : <span className="text-red-400">✗ Failed</span>}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
+                    </div>
+                    {/* Selection hint */}
+                    <div className="px-4 py-2 text-[10px] text-slate-600 border-t border-slate-800">
+                      {jobSelRecs.size > 0
+                        ? `${jobSelRecs.size} record${jobSelRecs.size !== 1 ? 's' : ''} selected — click "Reprint Selected" above`
+                        : 'Click rows or use checkboxes to select records for reprint'}
                     </div>
                   </div>
                 )}
