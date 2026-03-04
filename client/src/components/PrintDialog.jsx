@@ -139,7 +139,7 @@ export default function PrintDialog({ isOpen, onClose, onManagePrinters, canvasO
                       type="text"
                       value={templateValues[v] ?? ''}
                       onChange={(e) => setTemplateValues((p) => ({ ...p, [v]: e.target.value }))}
-                      placeholder={`Value for ${v}`}
+                      placeholder={v}
                       className="flex-1 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
                     />
                   </div>

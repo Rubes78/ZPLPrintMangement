@@ -20,7 +20,11 @@ function fabricAngleToZpl(angle) {
 }
 
 function applyVars(text = '', vars = {}) {
-  return text.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
+  return text.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    const val = vars[key];
+    // Empty/missing value → use the field name itself so test prints are readable
+    return (val != null && val !== '') ? val : key;
+  });
 }
 
 function round(n) {
