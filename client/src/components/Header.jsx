@@ -22,7 +22,6 @@ export default function Header({
   onClear,
   onManagePrinters,
   onPrint,
-  onBatchPrint,
   onHelp,
   isSaved,
   labels = [],
@@ -246,13 +245,6 @@ export default function Header({
         className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1 rounded text-sm font-semibold"
       >
         Print
-      </button>
-      <button
-        onClick={onBatchPrint}
-        title="Print multiple labels from CSV data"
-        className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded text-sm"
-      >
-        Batch
       </button>
 
       <div className="h-5 border-l border-slate-700" />

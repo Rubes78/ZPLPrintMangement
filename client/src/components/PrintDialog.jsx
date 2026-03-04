@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { extractTemplateVars } from '../lib/zplGenerator.js';
 import * as qzTray from '../lib/qzTray.js';
 
-export default function PrintDialog({ isOpen, onClose, onManagePrinters, canvasObjects, labelSettings, generateZpl }) {
+export default function PrintDialog({ isOpen, onClose, onManagePrinters, onBatchPrint, canvasObjects, labelSettings, generateZpl }) {
   const [printers, setPrinters]         = useState([]);
   const [selected, setSelected]         = useState(null);
   const [copies, setCopies]             = useState(1);
@@ -169,13 +169,19 @@ export default function PrintDialog({ isOpen, onClose, onManagePrinters, canvasO
         </div>
 
         {/* Print button */}
-        <div className="px-5 pb-5">
+        <div className="px-5 pb-4 space-y-2">
           <button
             onClick={handlePrint}
             disabled={!selected || printing}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold py-2.5 rounded transition-colors"
           >
             {printing ? 'Sending…' : selected ? `Print to ${selected.name}` : 'No printer selected'}
+          </button>
+          <button
+            onClick={() => { onClose(); onBatchPrint(); }}
+            className="w-full text-xs text-slate-500 hover:text-slate-300 py-1 transition-colors"
+          >
+            Batch print from CSV →
           </button>
         </div>
       </div>
