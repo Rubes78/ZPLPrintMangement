@@ -164,7 +164,10 @@ function generateBarcode(obj, x, y, rot, vars) {
 
 function generateQr(obj, x, y, rot, vars) {
   const data = applyVars(obj.barcodeData || '', vars);
-  const mag = obj.magnification || 4;
+  // Fold canvas scale into magnification so resize handles affect print size.
+  // QR codes are square so average scaleX/scaleY; clamp to ZPL's 1–10 range.
+  const scale = ((obj.scaleX || 1) + (obj.scaleY || 1)) / 2;
+  const mag = Math.min(10, Math.max(1, Math.round((obj.magnification || 4) * scale)));
   // ^BQ takes only 3 params: orientation, model 2, magnification.
   // ^FD data MUST be prefixed with "MA," — error correction M, auto mask —
   // otherwise the printer interprets the leading data bytes as control bytes
