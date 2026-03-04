@@ -1,0 +1,16 @@
+services:
+  zpl-editor:
+    build: .
+    container_name: zpl-editor
+    # Host networking lets the container reach the LAN directly —
+    # required for mDNS multicast discovery and subnet scanning.
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3200
+      - HTTPS_PORT=3201
+      - DATA_DIR=/app/data
+    volumes:
+      # Printers list persists here across container rebuilds.
+      - /Quarks/Data/Dockers/zpl-editor:/app/data
