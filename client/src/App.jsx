@@ -10,6 +10,7 @@ import LabelLibrary from './components/LabelLibrary.jsx';
 import { generateZpl } from './lib/zplGenerator.js';
 import { parseZpl } from './lib/zplParser.js';
 import LabelSummary from './components/LabelSummary.jsx';
+import HelpModal from './components/HelpModal.jsx';
 
 const DEFAULT_SETTINGS = {
   labelName: 'New Label',
@@ -47,6 +48,7 @@ export default function App() {
   const [propertiesOpen, setPropertiesOpen] = useState(true);
   const [propertiesTab, setPropertiesTab] = useState('label'); // 'text' | 'label'
   const [snapEnabled, setSnapEnabled] = useState(true);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // Compute label dimensions in dots
   const labelWidthDots = Math.round(labelSettings.widthInches * labelSettings.dpi);
@@ -230,6 +232,7 @@ export default function App() {
         onClear={handleClear}
         onManagePrinters={() => setPrintersOpen(true)}
         onPrint={() => setPrintOpen(true)}
+        onHelp={() => setHelpOpen(true)}
         isSaved={!!currentLabelId && !isDirty}
       />
 
@@ -321,6 +324,8 @@ export default function App() {
           </div>
         </aside>
       </div>
+
+      <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
 
       <LabelLibrary
         isOpen={libraryOpen}

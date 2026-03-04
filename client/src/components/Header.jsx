@@ -21,6 +21,7 @@ export default function Header({
   onClear,
   onManagePrinters,
   onPrint,
+  onHelp,
   isSaved,
 }) {
   const { labelName, widthInches, heightInches, dpi } = labelSettings;
@@ -190,6 +191,11 @@ export default function Header({
       >
         Print
       </button>
+      <button
+        onClick={onHelp}
+        title="User manual"
+        className="bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white w-7 h-7 rounded-full text-sm font-bold flex items-center justify-center border border-slate-600 hover:border-slate-400 transition-colors"
+      >?</button>
     </header>
   );
 }
