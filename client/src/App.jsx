@@ -289,7 +289,6 @@ export default function App() {
         onSettingsChange={handleSettingsChange}
         zoom={zoom}
         onZoomChange={setZoom}
-        onOrientationChange={handleOrientationChange}
         labels={labels}
         currentLabelId={currentLabelId}
         onNew={handleNew}
