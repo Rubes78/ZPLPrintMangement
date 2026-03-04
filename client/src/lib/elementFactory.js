@@ -98,19 +98,22 @@ export async function createQrElement({
     const qrData = QRCode.create(barcodeData || 'ERROR', { errorCorrectionLevel: 'M' });
     moduleCount = qrData.modules.size;
   } catch { /* keep fallback */ }
-  const size = (moduleCount + 8) * magnification; // matches ZPL: (modules + 4 quiet each side) × mag
+  // margin:0, size = modules × mag — ZPL's ^FO marks the start of the data
+  // modules (quiet zone is rendered outside, not counted from ^FO), so canvas
+  // dimensions must match the data-only size for centering to be accurate.
+  const size = moduleCount * magnification;
 
   const tempCanvas = document.createElement('canvas');
   try {
     await QRCode.toCanvas(tempCanvas, barcodeData || 'ERROR', {
       width: size,
-      margin: 4, // 4-module quiet zone — matches ZPL's standard quiet zone
+      margin: 0,
       color: { dark: '#000000', light: '#ffffff' },
     });
   } catch {
     await QRCode.toCanvas(tempCanvas, 'ERROR', {
       width: size,
-      margin: 4,
+      margin: 0,
       color: { dark: '#000000', light: '#ffffff' },
     });
   }
