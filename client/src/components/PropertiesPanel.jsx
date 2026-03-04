@@ -77,17 +77,6 @@ export default function PropertiesPanel({ selectedObject, labelSettings, onUpdat
         </Field>
       </Section>
 
-      {/* ── Field Name (for templates) ── */}
-      <Section title="Template">
-        <Field label="Field name">
-          <input type="text" value={local.fieldName}
-            placeholder="e.g. serialNumber"
-            onChange={(e) => { setL('fieldName', e.target.value); onUpdate({ fieldName: e.target.value }); }}
-            className="prop-input" />
-        </Field>
-        <p className="text-xs text-slate-500">Use <code className="bg-slate-700 px-1 rounded">{'{{fieldName}}'}</code> in text/data to insert at print time.</p>
-      </Section>
-
       {/* ── Type-specific ── */}
       {type === 'text' && <TextProps local={local} setL={setL} onUpdate={onUpdate} />}
       {type === 'barcode' && <BarcodeProps local={local} setL={setL} onRebuild={onRebuildBarcode} />}

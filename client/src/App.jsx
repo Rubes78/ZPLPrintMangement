@@ -43,6 +43,8 @@ export default function App() {
   const [libraryOpen, setLibraryOpen]   = useState(false);
   const [currentLabelId, setCurrentLabelId] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [propertiesOpen, setPropertiesOpen] = useState(true);
+  const [propertiesTab, setPropertiesTab] = useState('label'); // 'text' | 'label'
 
   // Compute label dimensions in dots
   const labelWidthDots = Math.round(labelSettings.widthInches * labelSettings.dpi);
@@ -77,7 +79,7 @@ export default function App() {
   }
 
   // ── Canvas interaction handlers ───────────────────────────────────────────
-  function handleAdd(type, file) {
+  function handleAdd(type, extra) {
     if (!canvasRef.current) return;
     switch (type) {
       case 'text':      return canvasRef.current.addText();
@@ -86,12 +88,18 @@ export default function App() {
       case 'qrcode':    return canvasRef.current.addQrCode();
       case 'box':       return canvasRef.current.addBox();
       case 'line':      return canvasRef.current.addLine();
-      case 'image':     return file && canvasRef.current.addImage(file);
+      case 'image':     return extra && canvasRef.current.addImage(extra);
+      case 'variable':
+        return canvasRef.current.addTextField({ text: `{{${extra}}}` });
+      case 'variable-barcode':
+        if (extra === 'qrcode') return canvasRef.current.addQrCode({ barcodeData: '{{barcode}}' });
+        return canvasRef.current.addBarcode(extra, { barcodeData: '{{barcode}}', showText: false });
     }
   }
 
   function handleObjectSelected(obj) {
     setSelectedObject(obj ? { ...obj } : null);
+    if (obj) setPropertiesTab('text');
   }
 
   function handleObjectDeselected() {
@@ -239,25 +247,61 @@ export default function App() {
 
         {/* Right: Properties + ZPL */}
         <aside className="w-[460px] flex flex-col bg-slate-900 border-l border-slate-700 overflow-hidden shrink-0">
-          {/* Properties panel — top 42% */}
-          <div className="flex flex-col border-b border-slate-700 overflow-hidden" style={{ height: '42%' }}>
-            <div className="px-3 py-2 bg-slate-800 border-b border-slate-700 shrink-0">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                {selectedObject ? `Properties — ${elementTypeName(selectedObject.elementType)}` : 'Label Properties'}
-              </span>
+          {/* Properties panel — collapsible, tabbed */}
+          <div className="flex flex-col border-b border-slate-700 shrink-0 overflow-hidden"
+               style={propertiesOpen ? { height: '42%' } : {}}>
+            {/* Tab bar */}
+            <div className="flex items-center bg-slate-800 border-b border-slate-700 shrink-0">
+              <button
+                onClick={() => setPropertiesTab('label')}
+                className={`flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition-colors border-r border-slate-700 ${
+                  propertiesTab === 'label'
+                    ? 'text-white bg-slate-700'
+                    : 'text-slate-500 hover:text-slate-300'}`}>
+                Label
+              </button>
+              <button
+                onClick={() => setPropertiesTab('text')}
+                className={`flex-1 px-3 py-2 text-xs font-semibold uppercase tracking-wide transition-colors border-r border-slate-700 ${
+                  propertiesTab === 'text'
+                    ? 'text-white bg-slate-700'
+                    : 'text-slate-500 hover:text-slate-300'}`}>
+                Text
+              </button>
+              <button
+                onClick={() => setPropertiesOpen((v) => !v)}
+                className={`px-3 py-2 text-xs border-l border-slate-700 transition-colors ${
+                  propertiesOpen
+                    ? 'text-slate-400 hover:text-white'
+                    : 'text-slate-500 hover:text-slate-300'}`}>
+                {propertiesOpen ? '▲' : '▼'}
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto">
-              <PropertiesPanel
-                selectedObject={selectedObject}
-                labelSettings={labelSettings}
-                onUpdate={handlePropertiesUpdate}
-                onRebuildBarcode={handleRebuildBarcode}
-                onSettingsChange={handleSettingsChange}
-              />
-            </div>
+            {propertiesOpen && (
+              <div className="flex-1 overflow-y-auto">
+                {propertiesTab === 'text' && !selectedObject
+                  ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-2 px-6 text-center">
+                      <span className="text-2xl text-slate-700">☰</span>
+                      <p className="text-xs text-slate-500">
+                        Add an element to the canvas, then select it to edit its properties here.
+                      </p>
+                    </div>
+                  ) : (
+                    <PropertiesPanel
+                      selectedObject={propertiesTab === 'text' ? selectedObject : null}
+                      labelSettings={labelSettings}
+                      onUpdate={handlePropertiesUpdate}
+                      onRebuildBarcode={handleRebuildBarcode}
+                      onSettingsChange={handleSettingsChange}
+                    />
+                  )
+                }
+              </div>
+            )}
           </div>
 
-          {/* ZPL panel — bottom 58% */}
+          {/* ZPL panel — fills remaining space */}
           <div className="flex flex-col flex-1 min-h-0">
             <ZplPanel
               zplCode={zplCode}

@@ -138,14 +138,20 @@ const LabelCanvas = forwardRef(function LabelCanvas(
       addAndSelect(obj);
     },
 
-    async addBarcode(barcodeType) {
-      const obj = await createBarcodeElement({ ...centerPoint(), barcodeType });
+    addTextField({ text }) {
+      const obj = createTextElement(centerPoint());
+      obj.set({ text });
       addAndSelect(obj);
     },
 
-    async addQrCode() {
+    async addBarcode(barcodeType, opts = {}) {
+      const obj = await createBarcodeElement({ ...centerPoint(), barcodeType, ...opts });
+      addAndSelect(obj);
+    },
+
+    async addQrCode(opts = {}) {
       const cp = centerPoint();
-      const obj = await createQrElement({ left: cp.left, top: cp.top });
+      const obj = await createQrElement({ left: cp.left, top: cp.top, ...opts });
       addAndSelect(obj);
     },
 
