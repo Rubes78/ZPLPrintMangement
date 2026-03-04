@@ -239,6 +239,7 @@ export default function App() {
         onZoomChange={setZoom}
         onOrientationChange={handleOrientationChange}
         labels={labels}
+        currentLabelId={currentLabelId}
         onLoadLabel={handleLoadFromLibrary}
         onSave={handleSave}
         onLibrary={() => setLibraryOpen(true)}
