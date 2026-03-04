@@ -50,7 +50,7 @@ export async function createBarcodeElement({
       height: barcodeHeight,
       displayValue: showText,
       fontSize: 14,
-      margin: 4,
+      margin: 0, // no extra quiet-zone margin — canvas width must equal ZPL barcode width in dots
       background: '#ffffff',
     });
   } catch {
@@ -59,6 +59,7 @@ export async function createBarcodeElement({
       width: moduleWidth,
       height: barcodeHeight,
       displayValue: false,
+      margin: 0,
       background: '#ffffff',
     });
   }
@@ -90,19 +91,26 @@ export async function createQrElement({
   scaleY = 1,
   angle = 0,
 } = {}) {
-  const size = Math.max(50, magnification * 25);
-  const tempCanvas = document.createElement('canvas');
+  // Calculate exact ZPL QR size: ZPL adds 4 quiet-zone modules each side (per QR spec).
+  // canvas size must equal ZPL size in dots so that centering is accurate.
+  let moduleCount = 21; // QR version 1 fallback
+  try {
+    const qrData = QRCode.create(barcodeData || 'ERROR', { errorCorrectionLevel: 'M' });
+    moduleCount = qrData.modules.size;
+  } catch { /* keep fallback */ }
+  const size = (moduleCount + 8) * magnification; // matches ZPL: (modules + 4 quiet each side) × mag
 
+  const tempCanvas = document.createElement('canvas');
   try {
     await QRCode.toCanvas(tempCanvas, barcodeData || 'ERROR', {
       width: size,
-      margin: 2,
+      margin: 4, // 4-module quiet zone — matches ZPL's standard quiet zone
       color: { dark: '#000000', light: '#ffffff' },
     });
   } catch {
     await QRCode.toCanvas(tempCanvas, 'ERROR', {
       width: size,
-      margin: 2,
+      margin: 4,
       color: { dark: '#000000', light: '#ffffff' },
     });
   }
