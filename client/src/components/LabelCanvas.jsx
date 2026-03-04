@@ -154,6 +154,41 @@ const LabelCanvas = forwardRef(function LabelCanvas(
     });
   }
 
+  // ── Alignment ─────────────────────────────────────────────────────────────
+  function align(direction) {
+    const canvas = fc.current;
+    const active = canvas.getActiveObject();
+    if (!active) return;
+
+    const labelW = labelWidthDots;
+    const labelH = labelHeightDots;
+
+    function applyAlign(obj, w, h) {
+      switch (direction) {
+        case 'left':    obj.set({ left: 0 }); break;
+        case 'centerH': obj.set({ left: Math.round((labelW - w) / 2) }); break;
+        case 'right':   obj.set({ left: labelW - w }); break;
+        case 'top':     obj.set({ top: 0 }); break;
+        case 'middleV': obj.set({ top: Math.round((labelH - h) / 2) }); break;
+        case 'bottom':  obj.set({ top: labelH - h }); break;
+      }
+      obj.setCoords();
+    }
+
+    if (active.type === 'activeSelection') {
+      const selected = active.getObjects().slice();
+      canvas.discardActiveObject();
+      selected.forEach(obj => applyAlign(obj, obj.getScaledWidth(), obj.getScaledHeight()));
+      const sel = new fabric.ActiveSelection(selected, { canvas });
+      canvas.setActiveObject(sel);
+    } else {
+      applyAlign(active, active.getScaledWidth(), active.getScaledHeight());
+    }
+
+    canvas.renderAll();
+    onCanvasChanged(canvas.getObjects());
+  }
+
   // ── Center point for adding elements ─────────────────────────────────────
   function centerPoint() {
     return {
@@ -398,6 +433,8 @@ const LabelCanvas = forwardRef(function LabelCanvas(
       onCanvasChanged(fc.current.getObjects());
     },
 
+    align,
+
     clearAll() {
       fc.current.clear();
       fc.current.backgroundColor = '#ffffff';
@@ -412,17 +449,45 @@ const LabelCanvas = forwardRef(function LabelCanvas(
   }));
 
   return (
-    <div className="flex-1 canvas-scroll-area overflow-auto relative flex items-start justify-start p-8">
-      {/* Snap toggle */}
-      <button
-        onClick={onToggleSnap}
-        title={snapEnabled ? 'Snap to grid: ON — click to disable' : 'Snap to grid: OFF — click to enable'}
-        className={`absolute top-2 right-2 z-10 text-[10px] font-semibold px-2 py-1 rounded border transition-colors ${
-          snapEnabled
-            ? 'bg-blue-700 border-blue-500 text-white'
-            : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}>
-        {snapEnabled ? '⊞ Grid ON' : '⊞ Grid OFF'}
-      </button>
+    <div className="flex-1 canvas-scroll-area overflow-auto relative flex items-start justify-start pt-12 px-8 pb-8">
+      {/* Toolbar: alignment + snap */}
+      <div className="absolute top-2 left-2 right-2 z-10 flex items-center gap-1">
+        {/* Horizontal alignment */}
+        {[
+          { dir: 'left',    title: 'Align left',            svg: 'M3 5h12M3 9h8M3 13h12M3 17h8M3 3v18' },
+          { dir: 'centerH', title: 'Center horizontally',   svg: 'M12 3v18M5 7h14M8 12h8M5 17h14' },
+          { dir: 'right',   title: 'Align right',           svg: 'M21 5H9M21 9h-8M21 13H9M21 17h-8M21 3v18' },
+        ].map(({ dir, title, svg }) => (
+          <AlignBtn key={dir} title={title} onClick={() => align(dir)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="w-3.5 h-3.5">
+              <path d={svg} />
+            </svg>
+          </AlignBtn>
+        ))}
+        <div className="w-px h-4 bg-slate-600 mx-0.5" />
+        {/* Vertical alignment */}
+        {[
+          { dir: 'top',     title: 'Align top',             svg: 'M5 3h14M7 3v12M12 3v8M17 3v12M3 3h18' },
+          { dir: 'middleV', title: 'Center vertically',     svg: 'M3 12h18M7 5v14M12 8v8M17 5v14' },
+          { dir: 'bottom',  title: 'Align bottom',          svg: 'M5 21h14M7 21V9M12 21v-8M17 21V9M3 21h18' },
+        ].map(({ dir, title, svg }) => (
+          <AlignBtn key={dir} title={title} onClick={() => align(dir)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="w-3.5 h-3.5">
+              <path d={svg} />
+            </svg>
+          </AlignBtn>
+        ))}
+        {/* Snap toggle — pushed right */}
+        <button
+          onClick={onToggleSnap}
+          title={snapEnabled ? 'Snap to grid: ON — click to disable' : 'Snap to grid: OFF — click to enable'}
+          className={`ml-auto text-[10px] font-semibold px-2 py-1 rounded border transition-colors ${
+            snapEnabled
+              ? 'bg-blue-700 border-blue-500 text-white'
+              : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}>
+          {snapEnabled ? '⊞ Grid ON' : '⊞ Grid OFF'}
+        </button>
+      </div>
       <div
         style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.6)' }}
         className="shrink-0"
@@ -434,6 +499,18 @@ const LabelCanvas = forwardRef(function LabelCanvas(
 });
 
 export default LabelCanvas;
+
+function AlignBtn({ title, onClick, children }) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className="p-1.5 rounded border border-slate-700 bg-slate-800 text-slate-400
+                 hover:bg-slate-700 hover:text-white hover:border-slate-500 transition-colors">
+      {children}
+    </button>
+  );
+}
 
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
