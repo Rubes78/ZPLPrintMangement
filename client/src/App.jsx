@@ -9,6 +9,7 @@ import PrinterSettings from './components/PrinterSettings.jsx';
 import LabelLibrary from './components/LabelLibrary.jsx';
 import { generateZpl } from './lib/zplGenerator.js';
 import { parseZpl } from './lib/zplParser.js';
+import LabelSummary from './components/LabelSummary.jsx';
 
 const DEFAULT_SETTINGS = {
   labelName: 'New Label',
@@ -234,16 +235,19 @@ export default function App() {
         {/* Left: Element palette */}
         <ElementPalette onAdd={handleAdd} />
 
-        {/* Center: Canvas */}
-        <LabelCanvas
-          ref={canvasRef}
-          labelWidthDots={labelWidthDots}
-          labelHeightDots={labelHeightDots}
-          zoom={zoom}
-          onObjectSelected={handleObjectSelected}
-          onObjectDeselected={handleObjectDeselected}
-          onCanvasChanged={handleCanvasChanged}
-        />
+        {/* Center: Canvas + Summary */}
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <LabelCanvas
+            ref={canvasRef}
+            labelWidthDots={labelWidthDots}
+            labelHeightDots={labelHeightDots}
+            zoom={zoom}
+            onObjectSelected={handleObjectSelected}
+            onObjectDeselected={handleObjectDeselected}
+            onCanvasChanged={handleCanvasChanged}
+          />
+          <LabelSummary labelSettings={labelSettings} canvasObjects={canvasObjects} />
+        </div>
 
         {/* Right: Properties + ZPL */}
         <aside className="w-[460px] flex flex-col bg-slate-900 border-l border-slate-700 overflow-hidden shrink-0">
