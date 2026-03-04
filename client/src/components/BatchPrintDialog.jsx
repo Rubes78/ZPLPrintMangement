@@ -144,18 +144,48 @@ function ImportView({ canvasObjects, labelSettings, currentLabelId, generateZpl,
   const [profiles, setProfiles]     = useState([]);
   const [activeProfileId, setActiveProfileId] = useState(null);
   const [editingCell, setEditingCell] = useState(null);   // { rowIdx, colIdx }
+  const [labels, setLabels]           = useState([]);
+  const [localCanvasObjects, setLocalCanvasObjects] = useState(null);
+  const [localLabelSettings, setLocalLabelSettings] = useState(null);
+  const [localLabelId, setLocalLabelId] = useState(null);
   const fileRef     = useRef(null);
   const cellInputRef = useRef(null);
 
-  const templateVars = extractTemplateVars(canvasObjects);
+  // Use locally selected label if set, otherwise fall back to currently open label
+  const effectiveCanvasObjects = localCanvasObjects ?? canvasObjects;
+  const effectiveLabelSettings = localLabelSettings ?? labelSettings;
+  const effectiveLabelId       = localLabelId ?? currentLabelId;
+
+  const templateVars = extractTemplateVars(effectiveCanvasObjects);
 
   useEffect(() => {
     fetch('/api/printers').then((r) => r.json()).then((data) => {
       setPrinters(data);
       setPrinter((prev) => (prev && data.find((p) => p.name === prev.name)) ? prev : (data[0] ?? null));
     }).catch(() => {});
+    fetch('/api/labels').then((r) => r.json()).then((data) => {
+      const arr = Array.isArray(data) ? data : (data.labels ?? []);
+      setLabels(arr.filter((l) => l.type === 'canvas' && l.canvasJSON));
+    }).catch(() => {});
     fetchProfiles();
   }, []);
+
+  function handleLabelSelect(labelId) {
+    if (!labelId) {
+      setLocalCanvasObjects(null);
+      setLocalLabelSettings(null);
+      setLocalLabelId(null);
+      setMapping({});
+      return;
+    }
+    const label = labels.find((l) => l.id === labelId);
+    if (!label) return;
+    const objects = label.canvasJSON?.objects ?? [];
+    setLocalCanvasObjects(objects);
+    setLocalLabelSettings(label.labelSettings);
+    setLocalLabelId(label.id);
+    setMapping({});  // reset mapping so auto-map runs on next CSV load
+  }
 
   useEffect(() => {
     if (editingCell && cellInputRef.current) cellInputRef.current.focus();
@@ -263,7 +293,7 @@ function ImportView({ canvasObjects, labelSettings, currentLabelId, generateZpl,
       let status = 'printed';
       let finalZpl = '';
       try {
-        const zpl = generateZpl(canvasObjects, labelSettings, vars);
+        const zpl = generateZpl(effectiveCanvasObjects, effectiveLabelSettings, vars);
         finalZpl = qty > 1 ? zpl.replace(/(\^XZ)/i, `^PQ${qty},0,1,Y$1`) : zpl;
         await sendZpl(finalZpl, printer);
       } catch { status = 'failed'; errors++; }
@@ -279,10 +309,10 @@ function ImportView({ canvasObjects, labelSettings, currentLabelId, generateZpl,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          labelId: currentLabelId,
-          labelName: labelSettings.labelName,
-          labelSettings,
-          zplTemplate: generateZpl(canvasObjects, labelSettings, {}),
+          labelId: effectiveLabelId,
+          labelName: effectiveLabelSettings.labelName,
+          labelSettings: effectiveLabelSettings,
+          zplTemplate: generateZpl(effectiveCanvasObjects, effectiveLabelSettings, {}),
           printer: { name: printer.name, type: printer.type, ip: printer.ip, port: printer.port, printerName: printer.printerName },
           records: jobRecords,
           totalPrinted: jobRecords.filter((r) => r.status === 'printed').length,
@@ -300,13 +330,13 @@ function ImportView({ canvasObjects, labelSettings, currentLabelId, generateZpl,
     const newItems = selectedRows.map((rowIdx) => {
       const vars = getVarsForRow(rowIdx);
       const qty = getQtyForRow(rowIdx);
-      const zpl = generateZpl(canvasObjects, labelSettings, vars);
+      const zpl = generateZpl(effectiveCanvasObjects, effectiveLabelSettings, vars);
       const finalZpl = qty > 1 ? zpl.replace(/(\^XZ)/i, `^PQ${qty},0,1,Y$1`) : zpl;
       return {
         id: uid(),
-        labelId: currentLabelId,
-        labelName: labelSettings.labelName,
-        labelSettings,
+        labelId: effectiveLabelId,
+        labelName: effectiveLabelSettings.labelName,
+        labelSettings: effectiveLabelSettings,
         vars,
         qty,
         zpl: finalZpl,
@@ -328,8 +358,17 @@ function ImportView({ canvasObjects, labelSettings, currentLabelId, generateZpl,
       <div className="w-64 shrink-0 border-r border-slate-700 flex flex-col overflow-y-auto bg-slate-900/40">
 
         <SideSection label="Label">
-          <p className="text-sm font-medium text-slate-200">{labelSettings.labelName || 'Untitled'}</p>
-          <p className="text-xs text-slate-400 mt-0.5">{labelSettings.widthInches}"×{labelSettings.heightInches}" · {labelSettings.dpi} dpi</p>
+          <select
+            value={localLabelId ?? ''}
+            onChange={(e) => handleLabelSelect(e.target.value || null)}
+            className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500 mb-2"
+          >
+            <option value="">— Current: {labelSettings.labelName || 'Untitled'} —</option>
+            {labels.map((l) => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-400">{effectiveLabelSettings.widthInches}"×{effectiveLabelSettings.heightInches}" · {effectiveLabelSettings.dpi} dpi</p>
           {templateVars.length === 0 && (
             <p className="text-xs text-amber-400 mt-1">No template variables found on this label.</p>
           )}
@@ -337,7 +376,7 @@ function ImportView({ canvasObjects, labelSettings, currentLabelId, generateZpl,
 
         <SideSection label="CSV Template">
           <button
-            onClick={() => downloadTemplate(templateVars, labelSettings.labelName)}
+            onClick={() => downloadTemplate(templateVars, effectiveLabelSettings.labelName)}
             className="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs px-3 py-2 rounded border border-slate-600 transition-colors flex items-center justify-center gap-1.5"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -530,9 +569,9 @@ function ImportView({ canvasObjects, labelSettings, currentLabelId, generateZpl,
                         <td className="px-2 py-1 border-r border-slate-800 text-center">
                           <RowThumb
                             vars={getVarsForRow(rowIdx)}
-                            labelSettings={labelSettings}
+                            labelSettings={effectiveLabelSettings}
                             generateZpl={generateZpl}
-                            canvasObjects={canvasObjects}
+                            canvasObjects={effectiveCanvasObjects}
                           />
                         </td>
                         {row.map((_, colIdx) => {
