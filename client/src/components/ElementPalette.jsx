@@ -98,28 +98,10 @@ export default function ElementPalette({ onAdd }) {
   return (
     <aside className="w-[172px] bg-slate-900 border-r border-slate-700 flex flex-col py-3 gap-1 shrink-0 overflow-y-auto">
 
-      {/* ── Elements ── */}
-      <p className="text-[10px] text-slate-500 font-semibold mb-0.5 text-center uppercase tracking-wide px-2">Add</p>
-      <div className="flex flex-col gap-1 px-2">
-        {ELEMENTS.map(({ type, icon, label }) => (
-          <button
-            key={type}
-            title={`Add ${label}`}
-            onClick={() => handleElementClick(type)}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700
-                       border border-slate-700 hover:border-blue-500 text-slate-300 hover:text-blue-300
-                       transition-colors cursor-pointer select-none"
-          >
-            <span className="text-xs leading-none w-5 text-center shrink-0">{icon}</span>
-            <span className="text-xs leading-tight">{label}</span>
-          </button>
-        ))}
-      </div>
-
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
 
       {/* ── Fields ── */}
-      <div className="border-t border-slate-700 mt-1 pt-2 px-2 flex flex-col gap-1">
+      <div className="px-2 flex flex-col gap-1">
         <div className="flex items-center justify-between mb-0.5">
           <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wide">Fields</p>
           <button onClick={openAdd} title="Add custom field"
@@ -226,6 +208,24 @@ export default function ElementPalette({ onAdd }) {
             </button>
           </div>
         )}
+      </div>
+
+      {/* ── Elements ── */}
+      <div className="border-t border-slate-700 mt-1 pt-2 px-2 flex flex-col gap-1">
+        <p className="text-[10px] text-slate-500 font-semibold mb-0.5 text-center uppercase tracking-wide">Add</p>
+        {ELEMENTS.map(({ type, icon, label }) => (
+          <button
+            key={type}
+            title={`Add ${label}`}
+            onClick={() => handleElementClick(type)}
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700
+                       border border-slate-700 hover:border-blue-500 text-slate-300 hover:text-blue-300
+                       transition-colors cursor-pointer select-none"
+          >
+            <span className="text-xs leading-none w-5 text-center shrink-0">{icon}</span>
+            <span className="text-xs leading-tight">{label}</span>
+          </button>
+        ))}
       </div>
 
       {/* ── Shortcuts ── */}
