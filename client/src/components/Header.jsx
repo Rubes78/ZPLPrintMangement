@@ -22,6 +22,8 @@ export default function Header({
   onPrint,
   onHelp,
   isSaved,
+  labels = [],
+  onLoadLabel,
 }) {
   const { labelName, widthInches, heightInches, dpi } = labelSettings;
   const isPortrait = heightInches >= widthInches;
@@ -176,6 +178,25 @@ export default function Header({
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* ── Quick-load dropdown ── */}
+      {labels.length > 0 && (
+        <select
+          value=""
+          onChange={(e) => {
+            const label = labels.find((l) => l.id === e.target.value);
+            if (label) onLoadLabel(label);
+            e.target.value = '';
+          }}
+          className="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-sm text-slate-300 focus:outline-none focus:border-blue-500 cursor-pointer max-w-[160px]"
+          title="Open a saved label"
+        >
+          <option value="" disabled>Open label…</option>
+          {labels.map((l) => (
+            <option key={l.id} value={l.id}>{l.name}</option>
+          ))}
+        </select>
+      )}
 
       {/* ── Primary actions (right of spacer) ── */}
       <button

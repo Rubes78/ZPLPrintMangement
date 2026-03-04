@@ -49,6 +49,18 @@ export default function App() {
   const [propertiesTab, setPropertiesTab] = useState('label'); // 'text' | 'label'
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [labels, setLabels] = useState([]);
+
+  // Fetch label list for quick-load dropdown
+  async function fetchLabels() {
+    try {
+      const res = await fetch('/api/labels');
+      const data = await res.json();
+      setLabels(data.labels ?? []);
+    } catch { /* silent */ }
+  }
+
+  useEffect(() => { fetchLabels(); }, []);
 
   // Compute label dimensions in dots
   const labelWidthDots = Math.round(labelSettings.widthInches * labelSettings.dpi);
@@ -135,7 +147,7 @@ export default function App() {
         body: JSON.stringify({ id: currentLabelId, name, type: 'canvas', labelSettings, canvasJSON, zplCode }),
       });
       const data = await res.json();
-      if (data.label) { setCurrentLabelId(data.label.id); setIsDirty(false); }
+      if (data.label) { setCurrentLabelId(data.label.id); setIsDirty(false); fetchLabels(); }
     } catch {
       alert('Failed to save label.');
     }
@@ -226,6 +238,8 @@ export default function App() {
         zoom={zoom}
         onZoomChange={setZoom}
         onOrientationChange={handleOrientationChange}
+        labels={labels}
+        onLoadLabel={handleLoadFromLibrary}
         onSave={handleSave}
         onLibrary={() => setLibraryOpen(true)}
         onClear={handleClear}
