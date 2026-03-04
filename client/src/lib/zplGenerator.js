@@ -159,8 +159,11 @@ function generateBarcode(obj, x, y, rot, vars) {
 function generateQr(obj, x, y, rot, vars) {
   const data = applyVars(obj.barcodeData || '', vars);
   const mag = obj.magnification || 4;
-  // ^BQ: rotation, model 2, magnification, error correction M, mask value 7
-  return `^FO${x},${y}^BQ${rot},2,${mag},M,7^FD${data}^FS\n`;
+  // ^BQ takes only 3 params: orientation, model 2, magnification.
+  // ^FD data MUST be prefixed with "MA," — error correction M, auto mask —
+  // otherwise the printer interprets the leading data bytes as control bytes
+  // and silently drops them (causing truncated scans).
+  return `^FO${x},${y}^BQ${rot},2,${mag}^FDMA,${data}^FS\n`;
 }
 
 function generateBox(obj, x, y) {
