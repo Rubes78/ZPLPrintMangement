@@ -402,6 +402,7 @@ export default function App() {
         onClose={() => setBatchPrintOpen(false)}
         canvasObjects={canvasObjects}
         labelSettings={labelSettings}
+        currentLabelId={currentLabelId}
         generateZpl={generateZpl}
       />
 
@@ -421,7 +422,6 @@ export default function App() {
         isOpen={printOpen}
         onClose={() => setPrintOpen(false)}
         onManagePrinters={() => { setPrintOpen(false); setPrintersOpen(true); }}
-        onBatchPrint={() => { setPrintOpen(false); setBatchPrintOpen(true); }}
         canvasObjects={canvasObjects}
         labelSettings={labelSettings}
         generateZpl={generateZpl}

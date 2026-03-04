@@ -754,6 +754,35 @@ app.delete('/api/jobs/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// ── Import Profiles ────────────────────────────────────────────────────────────
+const PROFILES_FILE = path.join(DATA_DIR, 'import-profiles.json');
+function loadProfiles() { try { return JSON.parse(fs.readFileSync(PROFILES_FILE, 'utf8')); } catch { return []; } }
+function saveProfiles(p) { fs.writeFileSync(PROFILES_FILE, JSON.stringify(p, null, 2)); }
+
+app.get('/api/import-profiles', (req, res) => res.json(loadProfiles()));
+
+app.post('/api/import-profiles', (req, res) => {
+  const profiles = loadProfiles();
+  const { id, name, labelId, labelName, mapping, qtyColumn, defaultQty } = req.body;
+  if (id) {
+    const idx = profiles.findIndex((p) => p.id === id);
+    if (idx >= 0) {
+      profiles[idx] = { ...profiles[idx], name, labelId, labelName, mapping, qtyColumn, defaultQty };
+      saveProfiles(profiles);
+      return res.json(profiles[idx]);
+    }
+  }
+  const profile = { id: Date.now().toString(36) + Math.random().toString(36).slice(2), name, labelId, labelName, mapping, qtyColumn, defaultQty, createdAt: new Date().toISOString() };
+  profiles.unshift(profile);
+  saveProfiles(profiles);
+  res.json(profile);
+});
+
+app.delete('/api/import-profiles/:id', (req, res) => {
+  saveProfiles(loadProfiles().filter((p) => p.id !== req.params.id));
+  res.json({ ok: true });
+});
+
 // ── TLS cert download (install in browser/Windows to avoid the HTTPS warning) ─
 app.get('/api/tls-cert', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="zpl-editor-ca.crt"');

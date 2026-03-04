@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { extractTemplateVars } from '../lib/zplGenerator.js';
 import * as qzTray from '../lib/qzTray.js';
 
-// ── CSV parser ────────────────────────────────────────────────────────────────
+// ── CSV utilities ──────────────────────────────────────────────────────────────
 function parseCsv(text) {
   const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 1) return { headers: [], rows: [] };
+  if (!lines.length) return { headers: [], rows: [] };
   const headers = splitCsvLine(lines[0]);
   const rows = lines.slice(1).filter((l) => l.trim()).map(splitCsvLine);
   return { headers, rows };
@@ -14,15 +14,34 @@ function splitCsvLine(line) {
   const result = []; let cur = ''; let inQ = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+    if (ch === '"') { if (inQ && line[i + 1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
     else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
     else cur += ch;
   }
   result.push(cur.trim());
   return result;
 }
+function toCsvRow(values) {
+  return values.map((v) => {
+    const s = String(v ?? '');
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(',');
+}
+function downloadCsv(filename, rows) {
+  const csv = rows.map(toCsvRow).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+function downloadTemplate(templateVars, labelName) {
+  const headers = [...templateVars, 'qty'];
+  const example = [...templateVars.map((v) => `Example ${v}`), '1'];
+  downloadCsv(`${(labelName || 'label').replace(/[^a-z0-9]/gi, '_')}_template.csv`, [headers, example]);
+}
 
-// ── Print a single ZPL string to a printer config ────────────────────────────
+// ── Send ZPL ───────────────────────────────────────────────────────────────────
 async function sendZpl(zpl, printer) {
   if (!printer) throw new Error('No printer selected');
   if (printer.type === 'qz') {
@@ -33,84 +52,100 @@ async function sendZpl(zpl, printer) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ zpl, printerIp: printer.ip, printerPort: printer.port, copies: 1 }),
     });
-    if (!resp.ok) {
-      const d = await resp.json().catch(() => ({}));
-      throw new Error(d.error || `HTTP ${resp.status}`);
-    }
+    if (!resp.ok) { const d = await resp.json().catch(() => ({})); throw new Error(d.error || `HTTP ${resp.status}`); }
   }
 }
 
-// ── Download CSV template ──────────────────────────────────────────────────────
-function downloadCsvTemplate(templateVars, labelName) {
-  const headers = [...templateVars, 'qty'];
-  const exampleRow = templateVars.map((v) => `Example ${v}`).concat(['1']);
-  const csv = [headers.join(','), exampleRow.join(',')].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${(labelName || 'label').replace(/[^a-z0-9]/gi, '_')}_template.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+// ── UID ────────────────────────────────────────────────────────────────────────
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 
-// ── Main component ────────────────────────────────────────────────────────────
-export default function BatchPrintDialog({
+// ── Main panel ─────────────────────────────────────────────────────────────────
+export default function ImportPanel({
   isOpen, onClose,
   canvasObjects, labelSettings, currentLabelId, generateZpl,
 }) {
   const [tab, setTab] = useState('import');
+  const [queue, setQueue] = useState([]);
 
   if (!isOpen) return null;
 
+  const tabs = [
+    { id: 'import', label: 'Import' },
+    { id: 'queue', label: 'Queue', badge: queue.length || null },
+    { id: 'history', label: 'History' },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="bg-slate-900 border border-slate-700 rounded-lg shadow-2xl flex flex-col"
-        style={{ width: '90vw', maxWidth: 1100, height: '88vh' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-bold text-slate-100">Import &amp; Print</span>
-            <div className="flex bg-slate-800 rounded p-0.5 gap-0.5">
-              {['import', 'history'].map((t) => (
-                <button key={t} onClick={() => setTab(t)}
-                  className={`px-3 py-1 rounded text-xs font-semibold capitalize transition-colors ${tab === t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
-                  {t === 'import' ? 'Import & Print' : 'Print History'}
-                </button>
-              ))}
-            </div>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">✕</button>
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950">
+
+      {/* Top bar */}
+      <div className="flex items-center gap-4 px-5 py-3 bg-slate-900 border-b border-slate-700 shrink-0">
+        <div className="flex items-center gap-2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-blue-400">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+            <line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="16" y2="17" /><line x1="8" y1="9" x2="10" y2="9" />
+          </svg>
+          <span className="font-semibold text-slate-100 text-sm">Import &amp; Print</span>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 min-h-0">
-          {tab === 'import'
-            ? <ImportTab canvasObjects={canvasObjects} labelSettings={labelSettings} currentLabelId={currentLabelId} generateZpl={generateZpl} />
-            : <HistoryTab generateZpl={generateZpl} />
-          }
-        </div>
+        <nav className="flex bg-slate-800 rounded p-0.5 gap-0.5">
+          {tabs.map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`px-4 py-1.5 rounded text-xs font-semibold transition-colors flex items-center gap-1.5 ${tab === t.id ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+              {t.label}
+              {t.badge ? (
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${tab === t.id ? 'bg-white/20' : 'bg-slate-600 text-slate-300'}`}>
+                  {t.badge}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+
+        <div className="flex-1" />
+        <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none w-8 h-8 flex items-center justify-center rounded hover:bg-slate-800 transition-colors">✕</button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 min-h-0">
+        {tab === 'import' && (
+          <ImportView
+            canvasObjects={canvasObjects}
+            labelSettings={labelSettings}
+            currentLabelId={currentLabelId}
+            generateZpl={generateZpl}
+            queue={queue}
+            setQueue={setQueue}
+            onGoQueue={() => setTab('queue')}
+          />
+        )}
+        {tab === 'queue' && (
+          <QueueView queue={queue} setQueue={setQueue} />
+        )}
+        {tab === 'history' && <HistoryView />}
       </div>
     </div>
   );
 }
 
-// ── Import & Print Tab ────────────────────────────────────────────────────────
-function ImportTab({ canvasObjects, labelSettings, currentLabelId, generateZpl }) {
-  const [csvData, setCsvData] = useState(null);
-  const [mapping, setMapping] = useState({});
-  const [qtyColumn, setQtyColumn] = useState('');
+// ── Import View ────────────────────────────────────────────────────────────────
+function ImportView({ canvasObjects, labelSettings, currentLabelId, generateZpl, queue, setQueue, onGoQueue }) {
+  const [csvData, setCsvData]       = useState(null);
+  const [edits, setEdits]           = useState({});        // { rowIdx: { colIdx: value } }
+  const [mapping, setMapping]       = useState({});
+  const [qtyColumn, setQtyColumn]   = useState('');
   const [defaultQty, setDefaultQty] = useState(1);
-  const [selected, setSelected] = useState(new Set());
-  const [printers, setPrinters] = useState([]);
-  const [printer, setPrinter] = useState(null);
-  const [printing, setPrinting] = useState(false);
-  const [progress, setProgress] = useState(null);
+  const [selected, setSelected]     = useState(new Set());
+  const [printers, setPrinters]     = useState([]);
+  const [printer, setPrinter]       = useState(null);
+  const [printing, setPrinting]     = useState(false);
+  const [progress, setProgress]     = useState(null);
   const [rowStatuses, setRowStatuses] = useState({});
-  const fileRef = useRef(null);
+  const [profiles, setProfiles]     = useState([]);
+  const [activeProfileId, setActiveProfileId] = useState(null);
+  const [editingCell, setEditingCell] = useState(null);   // { rowIdx, colIdx }
+  const fileRef     = useRef(null);
+  const cellInputRef = useRef(null);
 
   const templateVars = extractTemplateVars(canvasObjects);
 
@@ -119,7 +154,44 @@ function ImportTab({ canvasObjects, labelSettings, currentLabelId, generateZpl }
       setPrinters(data);
       setPrinter((prev) => (prev && data.find((p) => p.name === prev.name)) ? prev : (data[0] ?? null));
     }).catch(() => {});
+    fetchProfiles();
   }, []);
+
+  useEffect(() => {
+    if (editingCell && cellInputRef.current) cellInputRef.current.focus();
+  }, [editingCell]);
+
+  function fetchProfiles() {
+    fetch('/api/import-profiles').then((r) => r.json()).then(setProfiles).catch(() => {});
+  }
+
+  function applyProfile(profile) {
+    setActiveProfileId(profile.id);
+    setMapping(profile.mapping || {});
+    setQtyColumn(profile.qtyColumn || '');
+    setDefaultQty(profile.defaultQty || 1);
+  }
+
+  async function saveProfile() {
+    const existing = profiles.find((p) => p.id === activeProfileId);
+    const name = window.prompt('Profile name:', existing?.name || '');
+    if (!name) return;
+    const body = { name, labelId: currentLabelId, labelName: labelSettings.labelName, mapping, qtyColumn, defaultQty };
+    if (existing) body.id = activeProfileId;
+    const resp = await fetch('/api/import-profiles', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    fetchProfiles();
+    setActiveProfileId(data.id);
+  }
+
+  async function deleteProfile() {
+    if (!activeProfileId || !window.confirm('Delete this profile?')) return;
+    await fetch(`/api/import-profiles/${activeProfileId}`, { method: 'DELETE' });
+    setActiveProfileId(null);
+    fetchProfiles();
+  }
 
   function handleFile(file) {
     if (!file) return;
@@ -127,79 +199,81 @@ function ImportTab({ canvasObjects, labelSettings, currentLabelId, generateZpl }
     reader.onload = (e) => {
       const parsed = parseCsv(e.target.result);
       setCsvData(parsed);
+      setEdits({});
       setSelected(new Set(parsed.rows.map((_, i) => i)));
       setRowStatuses({});
       setProgress(null);
-      // Auto-map by name match
+      // Auto-map by name match (profile takes precedence)
       const autoMap = {};
       templateVars.forEach((v) => {
         const match = parsed.headers.find((h) => h.toLowerCase() === v.toLowerCase());
         if (match) autoMap[v] = match;
       });
-      setMapping(autoMap);
+      setMapping((prev) => ({ ...autoMap, ...prev }));
       // Auto-detect qty column
       const qtyCol = parsed.headers.find((h) => /^(qty|quantity|copies|count)$/i.test(h));
-      setQtyColumn(qtyCol || '');
+      if (qtyCol && !qtyColumn) setQtyColumn(qtyCol);
     };
     reader.readAsText(file);
   }
 
-  function getVarsForRow(row) {
+  function getCellValue(rowIdx, colIdx) {
+    return edits[rowIdx]?.[colIdx] ?? csvData?.rows[rowIdx]?.[colIdx] ?? '';
+  }
+  function setCellValue(rowIdx, colIdx, value) {
+    setEdits((prev) => ({ ...prev, [rowIdx]: { ...prev[rowIdx], [colIdx]: value } }));
+  }
+  function getVarsForRow(rowIdx) {
     const vars = {};
     templateVars.forEach((v) => {
       const col = mapping[v];
       if (col) {
         const idx = csvData.headers.indexOf(col);
-        vars[v] = idx >= 0 ? (row[idx] ?? '') : '';
+        vars[v] = idx >= 0 ? getCellValue(rowIdx, idx) : '';
       }
     });
     return vars;
   }
-
-  function getQtyForRow(row) {
+  function getQtyForRow(rowIdx) {
     if (qtyColumn) {
       const idx = csvData.headers.indexOf(qtyColumn);
-      const val = parseInt(row[idx] ?? '', 10);
-      return isNaN(val) || val < 1 ? defaultQty : val;
+      if (idx >= 0) {
+        const val = parseInt(getCellValue(rowIdx, idx), 10);
+        if (!isNaN(val) && val >= 1) return val;
+      }
     }
     return defaultQty;
   }
 
   async function handlePrint() {
     if (!csvData || !printer) return;
-    const rows = csvData.rows;
-    const selectedRows = rows.map((r, i) => ({ row: r, idx: i })).filter(({ idx }) => selected.has(idx));
-    if (selectedRows.length === 0) return;
-
+    const selectedRows = [...selected].sort((a, b) => a - b);
+    if (!selectedRows.length) return;
     setPrinting(true);
     const newStatuses = {};
-    selectedRows.forEach(({ idx }) => { newStatuses[idx] = 'pending'; });
+    selectedRows.forEach((i) => { newStatuses[i] = 'pending'; });
     setRowStatuses(newStatuses);
     setProgress({ done: 0, total: selectedRows.length, errors: 0 });
 
     const jobRecords = [];
-    let done = 0; let errors = 0;
-
-    for (const { row, idx } of selectedRows) {
-      const vars = getVarsForRow(row);
-      const qty = getQtyForRow(row);
+    let done = 0, errors = 0;
+    for (const rowIdx of selectedRows) {
+      const vars = getVarsForRow(rowIdx);
+      const qty = getQtyForRow(rowIdx);
       let status = 'printed';
+      let finalZpl = '';
       try {
         const zpl = generateZpl(canvasObjects, labelSettings, vars);
-        const finalZpl = qty > 1 ? zpl.replace(/(\^XZ)/i, `^PQ${qty},0,1,Y$1`) : zpl;
+        finalZpl = qty > 1 ? zpl.replace(/(\^XZ)/i, `^PQ${qty},0,1,Y$1`) : zpl;
         await sendZpl(finalZpl, printer);
-      } catch {
-        status = 'failed';
-        errors++;
-      }
+      } catch { status = 'failed'; errors++; }
       done++;
-      newStatuses[idx] = status;
+      newStatuses[rowIdx] = status;
       setRowStatuses({ ...newStatuses });
       setProgress({ done, total: selectedRows.length, errors });
-      jobRecords.push({ vars, qty, status });
+      jobRecords.push({ vars, qty, status, zpl: finalZpl });
     }
 
-    // Save to history
     try {
       await fetch('/api/jobs', {
         method: 'POST',
@@ -215,226 +289,283 @@ function ImportTab({ canvasObjects, labelSettings, currentLabelId, generateZpl }
           totalFailed: errors,
         }),
       });
-    } catch { /* history save failure is non-critical */ }
-
+    } catch { /* non-critical */ }
     setPrinting(false);
   }
 
-  const allSelected = csvData && selected.size === csvData.rows.length;
-  const toggleAll = () => {
-    if (allSelected) setSelected(new Set());
-    else setSelected(new Set(csvData.rows.map((_, i) => i)));
-  };
-  const toggleRow = (i) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(i) ? next.delete(i) : next.add(i);
-      return next;
+  function handleAddToQueue() {
+    if (!csvData) return;
+    const selectedRows = [...selected].sort((a, b) => a - b);
+    if (!selectedRows.length) return;
+    const newItems = selectedRows.map((rowIdx) => {
+      const vars = getVarsForRow(rowIdx);
+      const qty = getQtyForRow(rowIdx);
+      const zpl = generateZpl(canvasObjects, labelSettings, vars);
+      const finalZpl = qty > 1 ? zpl.replace(/(\^XZ)/i, `^PQ${qty},0,1,Y$1`) : zpl;
+      return {
+        id: uid(),
+        labelId: currentLabelId,
+        labelName: labelSettings.labelName,
+        labelSettings,
+        vars,
+        qty,
+        zpl: finalZpl,
+        addedAt: new Date().toISOString(),
+      };
     });
-  };
+    setQueue((prev) => [...prev, ...newItems]);
+    onGoQueue();
+  }
+
+  const allSelected = csvData && selected.size === csvData.rows.length;
+  const toggleAll   = () => setSelected(allSelected ? new Set() : new Set(csvData.rows.map((_, i) => i)));
+  const toggleRow   = (i) => setSelected((prev) => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n; });
 
   return (
     <div className="flex h-full min-h-0">
 
-      {/* Left sidebar — setup */}
-      <div className="w-64 shrink-0 border-r border-slate-700 flex flex-col overflow-y-auto">
+      {/* ── Left sidebar ── */}
+      <div className="w-64 shrink-0 border-r border-slate-700 flex flex-col overflow-y-auto bg-slate-900/40">
 
-        {/* Label info */}
-        <div className="px-4 py-3 border-b border-slate-700 bg-slate-800/50">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Label</p>
+        <SideSection label="Label">
           <p className="text-sm font-medium text-slate-200">{labelSettings.labelName || 'Untitled'}</p>
-          <p className="text-xs text-slate-400">{labelSettings.widthInches}"×{labelSettings.heightInches}" · {labelSettings.dpi} dpi</p>
+          <p className="text-xs text-slate-400 mt-0.5">{labelSettings.widthInches}"×{labelSettings.heightInches}" · {labelSettings.dpi} dpi</p>
           {templateVars.length === 0 && (
             <p className="text-xs text-amber-400 mt-1">No template variables found on this label.</p>
           )}
-        </div>
+        </SideSection>
 
-        {/* Download CSV template */}
-        <div className="px-4 py-3 border-b border-slate-700">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">CSV Template</p>
+        <SideSection label="CSV Template">
           <button
-            onClick={() => downloadCsvTemplate(templateVars, labelSettings.labelName)}
+            onClick={() => downloadTemplate(templateVars, labelSettings.labelName)}
             className="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs px-3 py-2 rounded border border-slate-600 transition-colors flex items-center justify-center gap-1.5"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-            Download CSV Template
+            Download Template
           </button>
           {templateVars.length > 0 && (
             <p className="text-[10px] text-slate-500 mt-1">Columns: {[...templateVars, 'qty'].join(', ')}</p>
           )}
-        </div>
+        </SideSection>
 
-        {/* File upload */}
-        <div className="px-4 py-3 border-b border-slate-700">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">1. Upload CSV</p>
+        <SideSection label="Import Profile">
+          <select
+            value={activeProfileId ?? ''}
+            onChange={(e) => {
+              const p = profiles.find((p) => p.id === e.target.value);
+              p ? applyProfile(p) : setActiveProfileId(null);
+            }}
+            className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500 mb-2"
+          >
+            <option value="">No profile</option>
+            {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <div className="flex gap-1">
+            <button onClick={saveProfile}
+              className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs px-2 py-1.5 rounded border border-slate-600 transition-colors">
+              {activeProfileId ? 'Update Profile' : 'Save Profile'}
+            </button>
+            {activeProfileId && (
+              <button onClick={deleteProfile}
+                className="bg-slate-700 hover:bg-red-900/40 text-slate-500 hover:text-red-400 text-xs px-2 py-1.5 rounded border border-slate-600 hover:border-red-700 transition-colors">
+                ✕
+              </button>
+            )}
+          </div>
+        </SideSection>
+
+        <SideSection label="1. Upload CSV">
           <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden"
             onChange={(e) => handleFile(e.target.files?.[0])} />
           <button onClick={() => fileRef.current?.click()}
             className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs px-3 py-2 rounded border border-slate-600 border-dashed transition-colors">
-            {csvData ? `✓ ${csvData.rows.length} rows, ${csvData.headers.length} columns` : 'Choose file…'}
+            {csvData ? `✓ ${csvData.rows.length} rows · ${csvData.headers.length} columns` : 'Choose CSV file…'}
           </button>
-          {csvData && (
-            <p className="text-[10px] text-slate-500 mt-1">Columns: {csvData.headers.join(', ')}</p>
-          )}
-        </div>
+          {csvData && <p className="text-[10px] text-slate-500 mt-1 break-words">Cols: {csvData.headers.join(', ')}</p>}
+        </SideSection>
 
-        {/* Field mapping */}
         {csvData && templateVars.length > 0 && (
-          <div className="px-4 py-3 border-b border-slate-700">
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">2. Map Fields</p>
+          <SideSection label="2. Map Fields">
             <div className="space-y-2">
               {templateVars.map((v) => (
                 <div key={v}>
                   <label className="text-[10px] text-amber-300 font-mono block mb-0.5">{`{{${v}}}`}</label>
                   <select value={mapping[v] ?? ''} onChange={(e) => setMapping((p) => ({ ...p, [v]: e.target.value || undefined }))}
                     className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
-                    <option value="">(use variable name)</option>
+                    <option value="">(none)</option>
                     {csvData.headers.map((h) => <option key={h} value={h}>{h}</option>)}
                   </select>
                 </div>
               ))}
             </div>
-          </div>
+          </SideSection>
         )}
 
-        {/* Quantity */}
         {csvData && (
-          <div className="px-4 py-3 border-b border-slate-700">
-            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">3. Quantity</p>
-            <div className="space-y-2">
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-0.5">From column</label>
-                <select value={qtyColumn} onChange={(e) => setQtyColumn(e.target.value)}
-                  className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
-                  <option value="">(none — use default)</option>
-                  {csvData.headers.map((h) => <option key={h} value={h}>{h}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-0.5">{qtyColumn ? 'Fallback default' : 'Default copies'}</label>
-                <input type="number" min={1} max={9999} value={defaultQty}
-                  onChange={(e) => setDefaultQty(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500" />
-              </div>
-            </div>
-          </div>
+          <SideSection label="3. Quantity">
+            <label className="text-[10px] text-slate-500 block mb-1">Qty column (optional)</label>
+            <select value={qtyColumn} onChange={(e) => setQtyColumn(e.target.value)}
+              className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500 mb-3">
+              <option value="">(use default)</option>
+              {csvData.headers.map((h) => <option key={h} value={h}>{h}</option>)}
+            </select>
+            <label className="text-[10px] text-slate-500 block mb-1">Default qty</label>
+            <input type="number" min={1} max={9999} value={defaultQty}
+              onChange={(e) => setDefaultQty(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-20 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500" />
+          </SideSection>
         )}
 
-        {/* Printer */}
-        <div className="px-4 py-3 border-b border-slate-700">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">{csvData ? '4.' : '2.'} Printer</p>
-          {printers.length === 0
-            ? <p className="text-xs text-slate-500">No printers configured.</p>
-            : printers.map((p) => (
-              <label key={p.name} className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-xs mb-1 transition-colors ${printer?.name === p.name ? 'bg-blue-700 text-white' : 'text-slate-300 hover:bg-slate-700'}`}>
-                <input type="radio" name="batchPrinter" checked={printer?.name === p.name} onChange={() => setPrinter(p)} className="accent-blue-400" />
-                <div>
-                  <div className="font-medium">{p.name}</div>
-                  <div className="text-[10px] font-mono text-slate-400">{p.type === 'qz' ? `QZ — ${p.printerName}` : `${p.ip}:${p.port}`}</div>
+        {csvData && (
+          <SideSection label="4. Printer">
+            {printers.length === 0
+              ? <p className="text-xs text-slate-500">No printers configured.</p>
+              : (
+                <div className="space-y-1.5">
+                  {printers.map((p) => (
+                    <label key={p.name}
+                      className={`flex items-center gap-2 px-2 py-1.5 rounded border cursor-pointer transition-colors ${printer?.name === p.name ? 'bg-blue-700/50 border-blue-500' : 'bg-slate-700 border-slate-600 hover:bg-slate-600'}`}>
+                      <input type="radio" name="importPrinter" className="accent-blue-400"
+                        checked={printer?.name === p.name} onChange={() => setPrinter(p)} />
+                      <div>
+                        <div className="text-xs text-slate-100 font-medium">{p.name}</div>
+                        <div className="text-[10px] font-mono text-slate-400">
+                          {p.type === 'qz' ? `QZ: ${p.printerName}` : `${p.ip}:${p.port}`}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
                 </div>
-              </label>
-            ))
-          }
-        </div>
+              )}
+          </SideSection>
+        )}
 
-        {/* Progress */}
-        {progress && (
-          <div className="px-4 py-3">
-            <div className="flex justify-between text-xs text-slate-400 mb-1">
-              <span>{progress.done}/{progress.total} sent</span>
-              {progress.errors > 0 && <span className="text-red-400">{progress.errors} failed</span>}
-            </div>
-            <div className="w-full bg-slate-700 rounded-full h-1.5">
-              <div className={`h-1.5 rounded-full transition-all ${progress.errors > 0 ? 'bg-amber-500' : 'bg-blue-500'}`}
-                style={{ width: `${(progress.done / progress.total) * 100}%` }} />
-            </div>
-            {progress.done === progress.total && (
-              <p className={`text-xs mt-1 ${progress.errors === 0 ? 'text-green-400' : 'text-amber-400'}`}>
-                {progress.errors === 0 ? 'All printed successfully.' : `Done — ${progress.errors} failed.`}
-              </p>
+        <div className="flex-1" />
+
+        {csvData && (
+          <div className="px-4 py-4 border-t border-slate-700 space-y-2 shrink-0">
+            {progress && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-slate-400">
+                  <span>{progress.done} / {progress.total}</span>
+                  {progress.errors > 0 && <span className="text-red-400">{progress.errors} failed</span>}
+                </div>
+                <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500 transition-all duration-200" style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+                </div>
+              </div>
             )}
+            <button onClick={handlePrint} disabled={!printer || printing || selected.size === 0}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold py-2 rounded transition-colors">
+              {printing ? `Printing… ${progress?.done ?? 0}/${progress?.total ?? 0}` : `Print ${selected.size} Selected`}
+            </button>
+            <button onClick={handleAddToQueue} disabled={printing || selected.size === 0}
+              className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-300 text-sm font-medium py-2 rounded border border-slate-600 transition-colors">
+              Add {selected.size} to Queue
+            </button>
           </div>
         )}
       </div>
 
-      {/* Right — data preview table */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      {/* ── Right: data table ── */}
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {!csvData ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-12 gap-3">
-            <p className="text-4xl text-slate-700">📄</p>
-            <p className="text-sm font-medium text-slate-400">Upload a CSV file to get started</p>
-            <p className="text-xs text-slate-600 max-w-sm">
-              First row should be column headers. Each subsequent row will print as one label.
-              Headers matching your template variables will be mapped automatically.
-            </p>
-            {templateVars.length > 0 && (
-              <div className="text-xs text-slate-500 bg-slate-800 rounded px-3 py-2 font-mono">
-                Expected columns: {templateVars.join(', ')}
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="w-20 h-20 text-slate-800 mx-auto">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                <line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="16" y2="17" /><line x1="8" y1="9" x2="10" y2="9" />
+              </svg>
+              <div>
+                <p className="text-slate-400 text-sm font-medium">Upload a CSV to get started</p>
+                <p className="text-slate-600 text-xs mt-1">Download the template from the sidebar for the correct format</p>
               </div>
-            )}
+            </div>
           </div>
         ) : (
           <>
             {/* Table toolbar */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700 bg-slate-800/50 shrink-0">
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
-                  <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-blue-500" />
-                  {allSelected ? 'Deselect all' : 'Select all'}
-                </label>
-                <span className="text-xs text-slate-500">{selected.size} of {csvData.rows.length} selected</span>
-              </div>
-              <button
-                onClick={handlePrint}
-                disabled={selected.size === 0 || !printer || printing}
-                className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-xs font-semibold px-4 py-1.5 rounded transition-colors"
-              >
-                {printing ? `Printing… (${progress?.done ?? 0}/${progress?.total ?? 0})` : `Print Selected (${selected.size})`}
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-700 bg-slate-900/60 shrink-0 text-xs text-slate-400">
+              <span>{selected.size} of {csvData.rows.length} selected</span>
+              <button onClick={toggleAll} className="text-blue-400 hover:text-blue-300 transition-colors">
+                {allSelected ? 'Deselect all' : 'Select all'}
               </button>
+              <span className="text-slate-700">·</span>
+              <span className="text-slate-600 italic">Click any cell to edit · Blue = edited</span>
             </div>
 
-            {/* Table */}
+            {/* Scrollable table */}
             <div className="flex-1 overflow-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead className="sticky top-0 bg-slate-800 z-10">
+              <table className="text-xs text-slate-300 min-w-full border-collapse">
+                <thead className="sticky top-0 bg-slate-900 z-10">
                   <tr>
-                    <th className="w-8 px-2 py-2 text-left border-b border-slate-700" />
-                    <th className="w-16 px-2 py-2 text-left text-slate-400 font-semibold border-b border-slate-700">Preview</th>
-                    {csvData.headers.map((h) => (
-                      <th key={h} className="px-3 py-2 text-left text-slate-400 font-semibold border-b border-slate-700 whitespace-nowrap">{h}</th>
-                    ))}
-                    <th className="px-3 py-2 text-left text-slate-400 font-semibold border-b border-slate-700 whitespace-nowrap">Qty</th>
-                    <th className="w-16 px-2 py-2 text-left text-slate-400 font-semibold border-b border-slate-700">Status</th>
+                    <th className="w-8 px-3 py-2 text-left border-b border-r border-slate-700">
+                      <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-blue-400" />
+                    </th>
+                    <th className="w-12 px-2 py-2 text-center border-b border-r border-slate-700 text-slate-500 font-semibold">Preview</th>
+                    {csvData.headers.map((h, i) => {
+                      const mappedVar = Object.entries(mapping).find(([, v]) => v === h)?.[0];
+                      return (
+                        <th key={i} className="px-3 py-2 text-left border-b border-r border-slate-700 font-semibold text-slate-400 whitespace-nowrap">
+                          {h}
+                          {mappedVar && <span className="ml-1 text-[9px] text-amber-400 font-mono">→{mappedVar}</span>}
+                        </th>
+                      );
+                    })}
+                    <th className="px-3 py-2 text-left border-b border-r border-slate-700 font-semibold text-slate-400">Qty</th>
+                    <th className="px-3 py-2 text-left border-b border-slate-700 font-semibold text-slate-400 w-24">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {csvData.rows.map((row, i) => {
-                    const qty = getQtyForRow(row);
-                    const status = rowStatuses[i];
+                  {csvData.rows.map((row, rowIdx) => {
+                    const status = rowStatuses[rowIdx];
                     return (
-                      <tr key={i} onClick={() => toggleRow(i)} className={`cursor-pointer border-b border-slate-800 transition-colors ${selected.has(i) ? 'bg-slate-800/60 hover:bg-slate-800' : 'hover:bg-slate-800/30'}`}>
-                        <td className="px-2 py-1.5 text-center">
-                          <input type="checkbox" checked={selected.has(i)} onChange={() => toggleRow(i)}
-                            onClick={(e) => e.stopPropagation()} className="accent-blue-500" />
+                      <tr key={rowIdx}
+                        className={`border-b border-slate-800/60 ${selected.has(rowIdx) ? 'bg-blue-950/20' : 'hover:bg-slate-800/30'}`}>
+                        <td className="px-3 py-1.5 border-r border-slate-800">
+                          <input type="checkbox" checked={selected.has(rowIdx)} onChange={() => toggleRow(rowIdx)} className="accent-blue-400" />
                         </td>
-                        <td className="px-2 py-1.5">
-                          <RowPreview
-                            vars={getVarsForRow(row)}
-                            qty={qty}
-                            canvasObjects={canvasObjects}
+                        <td className="px-2 py-1 border-r border-slate-800 text-center">
+                          <RowThumb
+                            vars={getVarsForRow(rowIdx)}
                             labelSettings={labelSettings}
                             generateZpl={generateZpl}
+                            canvasObjects={canvasObjects}
                           />
                         </td>
-                        {row.map((cell, j) => (
-                          <td key={j} className="px-3 py-1.5 text-slate-300 max-w-[180px] truncate" title={cell}>{cell}</td>
-                        ))}
-                        <td className="px-3 py-1.5 text-slate-400 text-center font-mono">{qty}</td>
-                        <td className="px-2 py-1.5">
-                          {status === 'printed' && <span className="text-green-400">✓</span>}
-                          {status === 'failed'  && <span className="text-red-400">✗</span>}
+                        {row.map((_, colIdx) => {
+                          const isEditing = editingCell?.rowIdx === rowIdx && editingCell?.colIdx === colIdx;
+                          const val = getCellValue(rowIdx, colIdx);
+                          const isEdited = edits[rowIdx]?.[colIdx] !== undefined;
+                          return (
+                            <td key={colIdx} className="px-1 py-0.5 border-r border-slate-800 max-w-[200px]"
+                              onClick={() => !isEditing && setEditingCell({ rowIdx, colIdx })}>
+                              {isEditing ? (
+                                <input
+                                  ref={cellInputRef}
+                                  value={val}
+                                  onChange={(e) => setCellValue(rowIdx, colIdx, e.target.value)}
+                                  onBlur={() => setEditingCell(null)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); setEditingCell(null); }
+                                    if (e.key === 'Escape') setEditingCell(null);
+                                  }}
+                                  className="w-full bg-blue-900/40 border border-blue-500 rounded px-2 py-0.5 text-xs text-slate-100 focus:outline-none min-w-[80px]"
+                                />
+                              ) : (
+                                <span className={`block px-2 py-1 rounded cursor-text hover:bg-slate-700/40 truncate transition-colors ${isEdited ? 'text-blue-300' : ''}`}>
+                                  {val || <span className="text-slate-700">—</span>}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-3 py-1.5 border-r border-slate-800 text-slate-400">{getQtyForRow(rowIdx)}</td>
+                        <td className="px-3 py-1.5">
+                          {status === 'printed' && <span className="text-green-400">✓ Printed</span>}
+                          {status === 'failed'  && <span className="text-red-400">✗ Failed</span>}
                           {status === 'pending' && <span className="text-slate-500 animate-pulse">…</span>}
                         </td>
                       </tr>
@@ -450,197 +581,490 @@ function ImportTab({ canvasObjects, labelSettings, currentLabelId, generateZpl }
   );
 }
 
-// ── Per-row preview thumbnail (loads on demand) ───────────────────────────────
-function RowPreview({ vars, qty, canvasObjects, labelSettings, generateZpl }) {
-  const [src, setSrc] = useState(null);
+// ── Row thumbnail ──────────────────────────────────────────────────────────────
+function RowThumb({ vars, labelSettings, generateZpl, canvasObjects }) {
+  const [img, setImg]         = useState(null);
   const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
 
-  async function load() {
-    if (loaded || loading) return;
+  function load() {
+    if (img || loading) return;
     setLoading(true);
-    try {
-      const zpl = generateZpl(canvasObjects, labelSettings, vars);
-      const resp = await fetch('/api/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ zpl, widthInches: labelSettings.widthInches, heightInches: labelSettings.heightInches, dpi: labelSettings.dpi }),
-      });
-      if (resp.ok) setSrc(URL.createObjectURL(await resp.blob()));
-    } catch {}
-    setLoading(false);
-    setLoaded(true);
+    const zpl = generateZpl(canvasObjects, labelSettings, vars);
+    fetch('/api/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zpl, widthInches: labelSettings.widthInches, heightInches: labelSettings.heightInches, dpi: labelSettings.dpi }),
+    })
+      .then((r) => r.blob())
+      .then((blob) => { setImg(URL.createObjectURL(blob)); setLoading(false); })
+      .catch(() => setLoading(false));
   }
 
   return (
-    <div className="w-10 h-12 bg-slate-700 border border-slate-600 rounded flex items-center justify-center overflow-hidden cursor-pointer"
-      onClick={(e) => { e.stopPropagation(); load(); }} title="Click to load preview">
-      {src
-        ? <img src={src} alt="" className="max-w-full max-h-full object-contain" style={{ imageRendering: 'pixelated' }} />
+    <div onClick={load}
+      className="w-9 h-9 mx-auto flex items-center justify-center rounded bg-slate-800 border border-slate-700 cursor-pointer hover:border-blue-500 overflow-hidden transition-colors"
+      title="Click to preview">
+      {img
+        ? <img src={img} alt="" className="w-full h-full object-contain" />
         : loading
-          ? <div className="w-3 h-3 border-2 border-slate-500 border-t-blue-400 rounded-full animate-spin" />
-          : <span className="text-slate-600 text-[10px]">👁</span>
+          ? <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-slate-600">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
+            </svg>
       }
     </div>
   );
 }
 
-// ── History Tab ───────────────────────────────────────────────────────────────
-function HistoryTab({ generateZpl }) {
-  const [jobs, setJobs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(null);
-  const [jobDetail, setJobDetail] = useState(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-  const [reprinting, setReprinting] = useState({});
-  const [reprintStatus, setReprintStatus] = useState({});
+// ── Queue View ─────────────────────────────────────────────────────────────────
+function QueueView({ queue, setQueue }) {
+  const [printers, setPrinters]     = useState([]);
+  const [printer, setPrinter]       = useState(null);
+  const [printing, setPrinting]     = useState(false);
+  const [progress, setProgress]     = useState(null);
+  const [itemStatuses, setItemStatuses] = useState({});
 
   useEffect(() => {
-    fetch('/api/jobs').then((r) => r.json()).then(setJobs).catch(() => {}).finally(() => setLoading(false));
+    fetch('/api/printers').then((r) => r.json()).then((data) => {
+      setPrinters(data);
+      setPrinter((prev) => (prev && data.find((p) => p.name === prev.name)) ? prev : (data[0] ?? null));
+    }).catch(() => {});
   }, []);
 
-  async function loadDetail(jobId) {
-    if (expanded === jobId) { setExpanded(null); setJobDetail(null); return; }
-    setExpanded(jobId);
-    setLoadingDetail(true);
-    try {
-      const res = await fetch(`/api/jobs/${jobId}`);
-      setJobDetail(await res.json());
-    } catch {}
-    setLoadingDetail(false);
+  async function printItems(items) {
+    if (!printer || !items.length) return;
+    setPrinting(true);
+    const statuses = {};
+    items.forEach((item) => { statuses[item.id] = 'pending'; });
+    setItemStatuses((prev) => ({ ...prev, ...statuses }));
+    setProgress({ done: 0, total: items.length, errors: 0 });
+
+    let done = 0, errors = 0;
+    const jobRecords = [];
+
+    for (const item of items) {
+      let status = 'printed';
+      try {
+        await sendZpl(item.zpl, printer);
+      } catch { status = 'failed'; errors++; }
+      done++;
+      statuses[item.id] = status;
+      setItemStatuses((prev) => ({ ...prev, ...statuses }));
+      setProgress({ done, total: items.length, errors });
+      jobRecords.push({ vars: item.vars, qty: item.qty, status, zpl: item.zpl });
+    }
+
+    // Save to history — group by label
+    const byLabel = {};
+    items.forEach((item, i) => {
+      const key = item.labelId || item.labelName || 'unknown';
+      if (!byLabel[key]) byLabel[key] = { item, records: [] };
+      byLabel[key].records.push(jobRecords[i]);
+    });
+    for (const { item, records } of Object.values(byLabel)) {
+      try {
+        await fetch('/api/jobs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            labelId: item.labelId, labelName: item.labelName, labelSettings: item.labelSettings,
+            zplTemplate: item.zpl,
+            printer: { name: printer.name, type: printer.type, ip: printer.ip, port: printer.port, printerName: printer.printerName },
+            records,
+            totalPrinted: records.filter((r) => r.status === 'printed').length,
+            totalFailed: records.filter((r) => r.status === 'failed').length,
+          }),
+        });
+      } catch { /* non-critical */ }
+    }
+
+    setPrinting(false);
+    // Remove successfully printed items
+    const printedIds = new Set(items.filter((item) => statuses[item.id] === 'printed').map((item) => item.id));
+    setQueue((prev) => prev.filter((item) => !printedIds.has(item.id)));
   }
 
-  async function handleReprint(job, recordIndices) {
-    const key = `${job.id}-${recordIndices.join(',')}`;
-    setReprinting((p) => ({ ...p, [key]: true }));
-    const printer = job.printer;
-    const statuses = {};
-    for (const idx of recordIndices) {
-      const rec = jobDetail.records[idx];
-      try {
-        const zpl = generateZpl([], job.labelSettings, rec.vars, job.zplTemplate);
-        const finalZpl = rec.qty > 1 ? zpl.replace(/(\^XZ)/i, `^PQ${rec.qty},0,1,Y$1`) : zpl;
-        await sendZpl(finalZpl, printer);
-        statuses[idx] = 'ok';
-      } catch {
-        statuses[idx] = 'fail';
-      }
+  function removeItem(id) {
+    setQueue((prev) => prev.filter((item) => item.id !== id));
+    setItemStatuses((prev) => { const n = { ...prev }; delete n[id]; return n; });
+  }
+
+  if (queue.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center space-y-3">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="w-20 h-20 text-slate-800 mx-auto">
+            <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+            <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+          </svg>
+          <p className="text-slate-400 text-sm font-medium">Queue is empty</p>
+          <p className="text-slate-600 text-xs">Use "Add to Queue" in the Import tab to stage items for printing</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0">
+
+      {/* Left sidebar */}
+      <div className="w-64 shrink-0 border-r border-slate-700 flex flex-col overflow-y-auto bg-slate-900/40">
+        <SideSection label="Printer">
+          {printers.length === 0
+            ? <p className="text-xs text-slate-500">No printers configured.</p>
+            : (
+              <div className="space-y-1.5">
+                {printers.map((p) => (
+                  <label key={p.name}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded border cursor-pointer transition-colors ${printer?.name === p.name ? 'bg-blue-700/50 border-blue-500' : 'bg-slate-700 border-slate-600 hover:bg-slate-600'}`}>
+                    <input type="radio" name="queuePrinter" className="accent-blue-400"
+                      checked={printer?.name === p.name} onChange={() => setPrinter(p)} />
+                    <div>
+                      <div className="text-xs text-slate-100 font-medium">{p.name}</div>
+                      <div className="text-[10px] font-mono text-slate-400">
+                        {p.type === 'qz' ? `QZ: ${p.printerName}` : `${p.ip}:${p.port}`}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+        </SideSection>
+
+        <div className="flex-1" />
+
+        <div className="px-4 py-4 border-t border-slate-700 space-y-2 shrink-0">
+          {progress && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] text-slate-400">
+                <span>{progress.done} / {progress.total}</span>
+                {progress.errors > 0 && <span className="text-red-400">{progress.errors} failed</span>}
+              </div>
+              <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500 transition-all duration-200" style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+              </div>
+            </div>
+          )}
+          <button onClick={() => printItems(queue)} disabled={!printer || printing}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold py-2 rounded transition-colors">
+            {printing ? `Printing… ${progress?.done ?? 0}/${progress?.total ?? 0}` : `Print All (${queue.length})`}
+          </button>
+          <button onClick={() => setQueue([])} disabled={printing}
+            className="w-full bg-slate-700 hover:bg-red-900/30 text-slate-400 hover:text-red-400 text-xs py-1.5 rounded border border-slate-600 hover:border-red-700 transition-colors">
+            Clear Queue
+          </button>
+        </div>
+      </div>
+
+      {/* Queue table */}
+      <div className="flex-1 overflow-auto">
+        <table className="text-xs text-slate-300 min-w-full border-collapse">
+          <thead className="sticky top-0 bg-slate-900 z-10">
+            <tr>
+              <th className="px-4 py-2 text-left border-b border-r border-slate-700 text-slate-400 font-semibold">Label</th>
+              <th className="px-4 py-2 text-left border-b border-r border-slate-700 text-slate-400 font-semibold">Variables</th>
+              <th className="px-4 py-2 text-left border-b border-r border-slate-700 text-slate-400 font-semibold w-16">Qty</th>
+              <th className="px-4 py-2 text-left border-b border-r border-slate-700 text-slate-400 font-semibold w-24">Status</th>
+              <th className="px-4 py-2 text-left border-b border-r border-slate-700 text-slate-400 font-semibold">Added</th>
+              <th className="w-10 border-b border-slate-700" />
+            </tr>
+          </thead>
+          <tbody>
+            {queue.map((item) => {
+              const status = itemStatuses[item.id];
+              return (
+                <tr key={item.id} className="border-b border-slate-800/60 hover:bg-slate-800/30">
+                  <td className="px-4 py-2 border-r border-slate-800 font-medium text-slate-200">{item.labelName || 'Untitled'}</td>
+                  <td className="px-4 py-2 border-r border-slate-800 text-slate-400 font-mono">
+                    {Object.entries(item.vars).slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                    {Object.keys(item.vars).length > 4 && ' …'}
+                    {Object.keys(item.vars).length === 0 && <span className="text-slate-600 italic">no variables</span>}
+                  </td>
+                  <td className="px-4 py-2 border-r border-slate-800">{item.qty}</td>
+                  <td className="px-4 py-2 border-r border-slate-800">
+                    {status === 'printed' && <span className="text-green-400">✓ Printed</span>}
+                    {status === 'failed'  && <span className="text-red-400">✗ Failed</span>}
+                    {status === 'pending' && <span className="text-slate-500 animate-pulse">…</span>}
+                    {!status && <span className="text-slate-500">Queued</span>}
+                  </td>
+                  <td className="px-4 py-2 border-r border-slate-800 text-slate-500">{new Date(item.addedAt).toLocaleTimeString()}</td>
+                  <td className="px-2 text-center">
+                    <button onClick={() => removeItem(item.id)}
+                      className="text-slate-600 hover:text-red-400 transition-colors" title="Remove">✕</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── History View ───────────────────────────────────────────────────────────────
+function HistoryView() {
+  const [jobs, setJobs]             = useState([]);
+  const [expanded, setExpanded]     = useState(null);
+  const [expandedData, setExpandedData] = useState({});
+  const [filterLabel, setFilterLabel] = useState('');
+  const [filterFrom, setFilterFrom]   = useState('');
+  const [filterTo, setFilterTo]       = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [reprinters, setReprinters]   = useState([]);
+  const [reprintPrinter, setReprintPrinter] = useState(null);
+  const [loading, setLoading]         = useState(true);
+
+  useEffect(() => {
+    fetchJobs();
+    fetch('/api/printers').then((r) => r.json()).then((data) => {
+      setReprinters(data);
+      setReprintPrinter(data[0] ?? null);
+    }).catch(() => {});
+  }, []);
+
+  function fetchJobs() {
+    setLoading(true);
+    fetch('/api/jobs').then((r) => r.json()).then((data) => { setJobs(data); setLoading(false); }).catch(() => setLoading(false));
+  }
+
+  async function expand(id) {
+    if (expanded === id) { setExpanded(null); return; }
+    setExpanded(id);
+    if (!expandedData[id]) {
+      const data = await fetch(`/api/jobs/${id}`).then((r) => r.json()).catch(() => null);
+      if (data) setExpandedData((prev) => ({ ...prev, [id]: data }));
     }
-    setReprintStatus((p) => ({ ...p, ...statuses }));
-    setReprinting((p) => ({ ...p, [key]: false }));
   }
 
   async function deleteJob(id) {
     if (!window.confirm('Delete this print job from history?')) return;
     await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
-    setJobs((p) => p.filter((j) => j.id !== id));
-    if (expanded === id) { setExpanded(null); setJobDetail(null); }
+    setJobs((prev) => prev.filter((j) => j.id !== id));
+    if (expanded === id) setExpanded(null);
   }
 
-  if (loading) return <div className="flex items-center justify-center h-full text-sm text-slate-500 animate-pulse">Loading history…</div>;
+  async function reprintRecord(rec) {
+    if (!reprintPrinter) return alert('Select a reprint printer first.');
+    if (!rec.zpl) return alert('No ZPL stored for this record.');
+    try {
+      await sendZpl(rec.zpl, reprintPrinter);
+      alert(`Sent to ${reprintPrinter.name}`);
+    } catch (e) { alert(`Failed: ${e.message}`); }
+  }
 
-  if (jobs.length === 0) return (
-    <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-8">
-      <p className="text-3xl text-slate-700">🗂</p>
-      <p className="text-sm text-slate-400">No print history yet.</p>
-      <p className="text-xs text-slate-600">Each batch print job will appear here so you can review and reprint records.</p>
-    </div>
-  );
+  async function reprintAll(job) {
+    if (!reprintPrinter) return alert('Select a reprint printer first.');
+    const detail = expandedData[job.id];
+    if (!detail?.records?.length) return alert('No records found.');
+    for (const rec of detail.records) {
+      if (!rec.zpl) continue;
+      try { await sendZpl(rec.zpl, reprintPrinter); } catch { /* continue */ }
+    }
+    alert(`Sent ${detail.records.length} records to ${reprintPrinter.name}`);
+  }
+
+  const labelNames = [...new Set(jobs.map((j) => j.labelName).filter(Boolean))].sort();
+
+  const filtered = jobs.filter((j) => {
+    if (filterLabel && j.labelName !== filterLabel) return false;
+    if (filterFrom && j.createdAt < filterFrom) return false;
+    if (filterTo   && j.createdAt > filterTo + 'T23:59:59') return false;
+    if (filterStatus === 'success' && j.totalFailed > 0) return false;
+    if (filterStatus === 'partial' && (j.totalFailed === 0 || j.totalPrinted === 0)) return false;
+    if (filterStatus === 'failed'  && j.totalPrinted > 0) return false;
+    return true;
+  });
+
+  function exportHistory() {
+    const rows = [['Date', 'Label', 'Printer', 'Total', 'Printed', 'Failed']];
+    filtered.forEach((j) => rows.push([
+      new Date(j.createdAt).toLocaleString(),
+      j.labelName || '',
+      j.printer?.name || '',
+      (j.totalPrinted || 0) + (j.totalFailed || 0),
+      j.totalPrinted || 0,
+      j.totalFailed || 0,
+    ]));
+    downloadCsv('print_history.csv', rows);
+  }
 
   return (
-    <div className="flex-1 overflow-y-auto divide-y divide-slate-800">
-      {jobs.map((job) => {
-        const isOpen = expanded === job.id;
-        return (
-          <div key={job.id} className="group">
-            {/* Job summary row */}
-            <div className="flex items-center gap-3 px-5 py-3 hover:bg-slate-800/40 transition-colors cursor-pointer"
-              onClick={() => loadDetail(job.id)}>
-              <span className="text-slate-500 text-xs">{isOpen ? '▼' : '▶'}</span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-semibold text-slate-200">{job.labelName || 'Untitled'}</span>
-                  <span className="text-xs text-slate-500">{job.recordCount} record{job.recordCount !== 1 ? 's' : ''}</span>
-                  {job.totalFailed > 0 && <span className="text-xs text-red-400">{job.totalFailed} failed</span>}
-                </div>
-                <div className="flex items-center gap-3 mt-0.5">
-                  <span className="text-xs text-slate-500">{new Date(job.createdAt).toLocaleString()}</span>
-                  {job.printer && <span className="text-xs text-slate-600 font-mono">{job.printer.name}</span>}
-                  <span className="text-xs text-slate-600">{job.labelSettings?.widthInches}"×{job.labelSettings?.heightInches}"</span>
-                </div>
-              </div>
-              <button onClick={(e) => { e.stopPropagation(); deleteJob(job.id); }}
-                className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-red-400 text-xs transition-opacity px-1">✕</button>
-            </div>
+    <div className="flex h-full min-h-0">
 
-            {/* Expanded records */}
-            {isOpen && (
-              <div className="border-t border-slate-800 bg-slate-950/30">
-                {loadingDetail ? (
-                  <p className="text-xs text-slate-500 px-5 py-4 animate-pulse">Loading records…</p>
-                ) : jobDetail && (
-                  <>
-                    <div className="flex items-center justify-between px-5 py-2 border-b border-slate-800 bg-slate-800/30">
-                      <span className="text-xs text-slate-400 font-semibold">{jobDetail.records.length} records</span>
-                      <button
-                        onClick={() => handleReprint(jobDetail, jobDetail.records.map((_, i) => i))}
-                        className="text-xs px-3 py-1 bg-blue-700 hover:bg-blue-600 text-white rounded transition-colors"
-                      >
-                        Reprint All
-                      </button>
+      {/* Left sidebar */}
+      <div className="w-64 shrink-0 border-r border-slate-700 flex flex-col overflow-y-auto bg-slate-900/40">
+
+        <SideSection label="Filters">
+          <div className="space-y-3">
+            <div>
+              <label className="text-[10px] text-slate-500 block mb-1">Label</label>
+              <select value={filterLabel} onChange={(e) => setFilterLabel(e.target.value)}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+                <option value="">All labels</option>
+                {labelNames.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] text-slate-500 block mb-1">From</label>
+              <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label className="text-[10px] text-slate-500 block mb-1">To</label>
+              <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label className="text-[10px] text-slate-500 block mb-1">Status</label>
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-blue-500">
+                <option value="all">All</option>
+                <option value="success">All succeeded</option>
+                <option value="partial">Partial failure</option>
+                <option value="failed">All failed</option>
+              </select>
+            </div>
+          </div>
+        </SideSection>
+
+        <SideSection label="Reprint Printer">
+          {reprinters.length === 0
+            ? <p className="text-xs text-slate-500">No printers configured.</p>
+            : (
+              <div className="space-y-1.5">
+                {reprinters.map((p) => (
+                  <label key={p.name}
+                    className={`flex items-center gap-2 px-2 py-1.5 rounded border cursor-pointer transition-colors ${reprintPrinter?.name === p.name ? 'bg-blue-700/50 border-blue-500' : 'bg-slate-700 border-slate-600 hover:bg-slate-600'}`}>
+                    <input type="radio" name="reprintPrinter" className="accent-blue-400"
+                      checked={reprintPrinter?.name === p.name} onChange={() => setReprintPrinter(p)} />
+                    <div>
+                      <div className="text-xs text-slate-100 font-medium">{p.name}</div>
+                      <div className="text-[10px] font-mono text-slate-400">
+                        {p.type === 'qz' ? `QZ: ${p.printerName}` : `${p.ip}:${p.port}`}
+                      </div>
                     </div>
+                  </label>
+                ))}
+              </div>
+            )}
+        </SideSection>
+
+        <div className="flex-1" />
+
+        <div className="px-4 py-4 border-t border-slate-700 space-y-2 shrink-0">
+          <p className="text-[10px] text-slate-500">{filtered.length} job{filtered.length !== 1 ? 's' : ''} shown</p>
+          <button onClick={exportHistory} disabled={!filtered.length}
+            className="w-full bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-300 text-xs py-2 rounded border border-slate-600 transition-colors flex items-center justify-center gap-1.5">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Export to CSV
+          </button>
+          <button onClick={fetchJobs} className="w-full text-xs text-slate-500 hover:text-slate-300 py-1 transition-colors">↺ Refresh</button>
+        </div>
+      </div>
+
+      {/* Job list */}
+      <div className="flex-1 overflow-auto">
+        {loading && <div className="p-8 text-center text-slate-500 text-sm">Loading…</div>}
+        {!loading && filtered.length === 0 && (
+          <div className="p-8 text-center text-slate-500 text-sm">No jobs match the current filters.</div>
+        )}
+        <div className="divide-y divide-slate-800">
+          {filtered.map((job) => {
+            const isExpanded = expanded === job.id;
+            const detail     = expandedData[job.id];
+            return (
+              <div key={job.id}>
+                {/* Job row */}
+                <div className="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/30 cursor-pointer transition-colors"
+                  onClick={() => expand(job.id)}>
+                  <span className="text-slate-600 text-xs w-4 shrink-0">{isExpanded ? '▾' : '▸'}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-slate-200">{job.labelName || 'Untitled'}</span>
+                      <StatusBadge printed={job.totalPrinted} failed={job.totalFailed} />
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      {new Date(job.createdAt).toLocaleString()} · {job.printer?.name || 'Unknown printer'} · {(job.recordCount || (job.totalPrinted + job.totalFailed))} records
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => reprintAll(job)}
+                      className="text-xs text-slate-500 hover:text-blue-400 px-2 py-1 rounded hover:bg-slate-700 transition-colors"
+                      title="Reprint all records">Reprint All</button>
+                    <button onClick={() => deleteJob(job.id)}
+                      className="text-slate-600 hover:text-red-400 transition-colors w-7 h-7 flex items-center justify-center rounded hover:bg-slate-700"
+                      title="Delete job">✕</button>
+                  </div>
+                </div>
+
+                {/* Expanded records */}
+                {isExpanded && detail && (
+                  <div className="bg-slate-900/60 border-t border-b border-slate-800">
                     <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
+                      <table className="text-xs text-slate-300 min-w-full border-collapse">
                         <thead>
-                          <tr className="border-b border-slate-800">
-                            <th className="px-4 py-2 text-left text-slate-500 font-semibold">#</th>
-                            {Object.keys(jobDetail.records[0]?.vars ?? {}).map((k) => (
-                              <th key={k} className="px-4 py-2 text-left text-slate-500 font-semibold font-mono">{`{{${k}}}`}</th>
+                          <tr className="bg-slate-900/80">
+                            <th className="px-4 py-2 text-left border-b border-slate-700 text-slate-500 font-semibold w-10">#</th>
+                            {Object.keys(detail.records[0]?.vars || {}).map((k) => (
+                              <th key={k} className="px-4 py-2 text-left border-b border-slate-700 text-slate-500 font-semibold font-mono">{k}</th>
                             ))}
-                            <th className="px-4 py-2 text-left text-slate-500 font-semibold">Qty</th>
-                            <th className="px-4 py-2 text-left text-slate-500 font-semibold">Status</th>
-                            <th className="px-4 py-2" />
+                            <th className="px-4 py-2 text-left border-b border-slate-700 text-slate-500 font-semibold w-12">Qty</th>
+                            <th className="px-4 py-2 text-left border-b border-slate-700 text-slate-500 font-semibold w-24">Status</th>
+                            <th className="px-4 py-2 border-b border-slate-700 w-20" />
                           </tr>
                         </thead>
                         <tbody>
-                          {jobDetail.records.map((rec, i) => (
-                            <tr key={i} className="border-b border-slate-800/60 hover:bg-slate-800/30">
+                          {detail.records.map((rec, i) => (
+                            <tr key={i} className="border-b border-slate-800/60 hover:bg-slate-800/20">
                               <td className="px-4 py-1.5 text-slate-600">{i + 1}</td>
-                              {Object.values(rec.vars).map((v, j) => (
-                                <td key={j} className="px-4 py-1.5 text-slate-300 max-w-[180px] truncate">{v}</td>
+                              {Object.values(rec.vars || {}).map((v, vi) => (
+                                <td key={vi} className="px-4 py-1.5 text-slate-300 font-mono">{v}</td>
                               ))}
-                              <td className="px-4 py-1.5 text-slate-400 font-mono">{rec.qty}</td>
+                              <td className="px-4 py-1.5">{rec.qty}</td>
                               <td className="px-4 py-1.5">
-                                {reprintStatus[i] === 'ok'
-                                  ? <span className="text-green-400">✓ Reprinted</span>
-                                  : reprintStatus[i] === 'fail'
-                                    ? <span className="text-red-400">✗ Failed</span>
-                                    : rec.status === 'printed'
-                                      ? <span className="text-slate-500">Printed</span>
-                                      : <span className="text-red-400/70">Failed</span>
-                                }
+                                {rec.status === 'printed'
+                                  ? <span className="text-green-400">✓ Printed</span>
+                                  : <span className="text-red-400">✗ Failed</span>}
                               </td>
-                              <td className="px-4 py-1.5">
-                                <button
-                                  onClick={() => handleReprint(jobDetail, [i])}
-                                  disabled={reprinting[`${jobDetail.id}-${i}`]}
-                                  className="text-[10px] px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors disabled:opacity-50"
-                                >
-                                  Reprint
-                                </button>
+                              <td className="px-4 py-1.5 text-right">
+                                {rec.zpl && (
+                                  <button onClick={() => reprintRecord(rec)}
+                                    className="text-xs text-slate-500 hover:text-blue-400 transition-colors px-2 py-0.5 rounded hover:bg-slate-700">
+                                    Reprint
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
+}
+
+// ── Shared helpers ─────────────────────────────────────────────────────────────
+function SideSection({ label, children }) {
+  return (
+    <div className="px-4 py-3 border-b border-slate-700 shrink-0">
+      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+function StatusBadge({ printed = 0, failed = 0 }) {
+  if (failed === 0)  return <span className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">{printed} printed</span>;
+  if (printed === 0) return <span className="text-[10px] bg-red-900/50 text-red-400 px-1.5 py-0.5 rounded">{failed} failed</span>;
+  return <span className="text-[10px] bg-amber-900/50 text-amber-400 px-1.5 py-0.5 rounded">{printed} ok · {failed} failed</span>;
 }
