@@ -8,6 +8,7 @@ const SECTIONS = [
   { id: 'label',       title: 'Label Settings' },
   { id: 'library',     title: 'Label Library' },
   { id: 'printing',    title: 'Printing' },
+  { id: 'import',      title: 'Import & Print' },
   { id: 'variables',   title: 'Template Variables' },
   { id: 'keyboard',    title: 'Keyboard Shortcuts' },
 ];
@@ -79,6 +80,7 @@ export default function HelpModal({ isOpen, onClose }) {
                 <li><Hl>Center</Hl> — Canvas (WYSIWYG design area)</li>
                 <li><Hl>Right panel</Hl> — Properties, label settings, and ZPL output</li>
               </ul>
+              <p className="mt-2">The header contains all primary actions: <Hl>New</Hl>, <Hl>Open label</Hl> dropdown, <Hl>Save</Hl>, <Hl>Print</Hl>, and <Hl>Import &amp; Print</Hl>.</p>
             </Section>
 
             {/* ── Canvas ── */}
@@ -130,7 +132,7 @@ export default function HelpModal({ isOpen, onClose }) {
                 ['▦  QR Code',      'QR Code 2D barcode'],
                 ['□  Box',          'Outlined rectangle — useful for borders'],
                 ['─  Line',         'Horizontal rule / separator'],
-                ['🖼  Image',       'Upload a PNG/JPG — converted to 1-bit black &amp; white in ZPL'],
+                ['🖼  Image',       'Upload a PNG/JPG — converted to 1-bit black & white in ZPL'],
               ]} />
             </Section>
 
@@ -160,7 +162,7 @@ export default function HelpModal({ isOpen, onClose }) {
             <Section id="label" title="Label Settings">
               <p>Label settings live in the header and the Label tab of the properties panel.</p>
               <Table rows={[
-                ['Label name',      'Name shown in the library'],
+                ['Label name',      'Name shown in the library and in Import & Print'],
                 ['Preset size',     'Quick-select common label sizes'],
                 ['W / H (inches)',  'Label width and height in inches'],
                 ['DPI',             '203 or 300 — must match your printer\'s head resolution'],
@@ -185,21 +187,21 @@ export default function HelpModal({ isOpen, onClose }) {
               <p>The library stores saved labels persistently on the server (survives container restarts).</p>
 
               <H3>Saving</H3>
-              <p>Click <Hl>Save</Hl> in the header. If the label has never been saved, you will be prompted for a name. Subsequent saves overwrite the existing entry. The button shows <Hl>Saved ✓</Hl> in green when no unsaved changes exist.</p>
+              <p>Click <Hl>Save</Hl> in the header. If the label has never been saved, you will be prompted for a name. Subsequent saves overwrite the existing entry. The button shows <Hl>Saved ✓</Hl> in green when no unsaved changes exist. Use the <Hl>▾</Hl> dropdown next to Save for <Hl>Save As…</Hl> to duplicate under a new name.</p>
 
-              <H3>Opening the Library</H3>
-              <p>Click <Hl>Library</Hl> in the header to open the library drawer. Click any label to load it onto the canvas.</p>
+              <H3>Opening a Label</H3>
+              <p>Use the <Hl>Open label…</Hl> dropdown in the header to load any saved label directly onto the canvas. You can also click the library icon (≡) to open the full library drawer.</p>
+
+              <H3>Deleting a Label</H3>
+              <p>Select the label via the header dropdown — a trash icon appears next to it. Click it to delete the currently loaded label. You can also hover a label in the library drawer and click <Hl>×</Hl>.</p>
 
               <H3>ZPL-only labels</H3>
-              <p>You can also paste raw ZPL into the ZPL panel (bottom-right) and save it to the library without a canvas representation. These appear with a <Hl>ZPL</Hl> badge in the library.</p>
-
-              <H3>Deleting</H3>
-              <p>Hover a label in the library and click the <Hl>×</Hl> button to delete it.</p>
+              <p>You can also paste raw ZPL into the ZPL panel (bottom-right) and save it to the library without a canvas representation. These appear with a <Hl>ZPL</Hl> badge in the library. Note: ZPL-only labels cannot be used as the template in Import &amp; Print.</p>
             </Section>
 
             {/* ── Printing ── */}
             <Section id="printing" title="Printing">
-              <p>Click <Hl>Print</Hl> in the header to open the print dialog.</p>
+              <p>Click <Hl>Print</Hl> in the header to open the single-label print dialog.</p>
 
               <H3>Printer types</H3>
               <Table rows={[
@@ -208,18 +210,66 @@ export default function HelpModal({ isOpen, onClose }) {
               ]} />
 
               <H3>Managing printers</H3>
-              <p>Click <Hl>Printers</Hl> in the header to add, edit, or remove printer entries. Each printer needs a name, IP address, and port (9100 is standard for Zebra).</p>
+              <p>Click the <Hl>gear icon</Hl> in the header to add, edit, or remove printer entries. Each printer needs a name, IP address, and port (9100 is standard for Zebra).</p>
 
               <H3>Template variables at print time</H3>
               <p>If your label contains <code className="bg-slate-800 px-1 rounded text-amber-300">{`{{fields}}`}</code>, the print dialog shows an input for each variable. Leave a field blank to print the field name itself (e.g. <code className="bg-slate-800 px-1 rounded text-amber-300">CompanyName</code>) — useful for quick test prints without entering real data.</p>
 
               <H3>Copies</H3>
               <p>Enter the number of copies in the print dialog. The <code className="bg-slate-800 px-1 rounded text-blue-300">^PQ</code> command is injected automatically.</p>
+
+              <H3>Batch / CSV printing</H3>
+              <p>To print many labels from a data file, use <Hl>Import &amp; Print</Hl> instead — see the next section.</p>
+            </Section>
+
+            {/* ── Import & Print ── */}
+            <Section id="import" title="Import & Print">
+              <p><Hl>Import &amp; Print</Hl> is a full-screen workflow for printing many labels from a CSV file. Open it with the <Hl>Import &amp; Print</Hl> button (indigo) in the header. It has three tabs: <Hl>Import</Hl>, <Hl>Queue</Hl>, and <Hl>History</Hl>.</p>
+
+              <H3>Import tab — step by step</H3>
+              <Table rows={[
+                ['Label selector',    'Choose which saved canvas label to use as the template. Defaults to the currently open label. Changing the label resets the field mapping.'],
+                ['CSV Template',      'Download a pre-formatted CSV template with the correct column headers for the selected label\'s template variables, plus a "qty" column.'],
+                ['Import Profile',    'Save and reload your column mapping configuration. Useful when the same CSV format is used repeatedly. Profiles are stored on the server.'],
+                ['1. Upload CSV',     'Click to choose a .csv or .txt file. Columns are displayed and rows are loaded into the table. All rows are selected by default.'],
+                ['2. Map Fields',     'For each {{variable}} on the label, pick which CSV column supplies its value. Columns with matching names are auto-mapped on upload.'],
+                ['3. Quantity',       'Optionally pick a CSV column that holds a per-row print quantity (auto-detected if named qty/quantity/copies/count). Set a default qty for rows without one.'],
+                ['4. Printer',        'Select the destination printer (TCP/IP or QZ Tray).'],
+              ]} />
+
+              <H3>Data table</H3>
+              <ul className="list-disc list-inside space-y-1 text-slate-400">
+                <li>Each row from the CSV appears as a table row. Check/uncheck rows to include or exclude them from the print run.</li>
+                <li>The <Hl>Preview</Hl> column shows a click-to-load thumbnail (Labelary render) for each row.</li>
+                <li>Click any cell to edit its value inline before printing. Edited cells turn blue.</li>
+                <li>The <Hl>Qty</Hl> column shows how many copies will print for that row.</li>
+                <li>The <Hl>Status</Hl> column shows live print status: Pending → Printed / Failed.</li>
+              </ul>
+
+              <H3>Printing from the Import tab</H3>
+              <ul className="list-disc list-inside space-y-1 text-slate-400">
+                <li><Hl>Print N Selected</Hl> — sends selected rows immediately, one by one. A progress bar tracks completion.</li>
+                <li><Hl>Add N to Queue</Hl> — stages the selected rows in the Queue tab without printing yet.</li>
+              </ul>
+
+              <H3>Queue tab</H3>
+              <p>The Queue holds items from one or more Import sessions that haven't been printed yet. Items from different labels can be mixed. Click <Hl>Print All</Hl> to send everything, or remove individual items with <Hl>✕</Hl>. Successfully printed items are removed from the queue automatically. <Hl>Clear Queue</Hl> empties it entirely.</p>
+
+              <H3>History tab</H3>
+              <p>Every completed print run (from Import or Queue) is saved to History.</p>
+              <Table rows={[
+                ['Filters',          'Filter by label name, date range, and success/partial/failed status.'],
+                ['Export',           'Download the filtered history as a CSV file.'],
+                ['Expand a job',     'Click a row to expand it and see the individual records (variables, qty, status per row).'],
+                ['Multi-select reprint', 'Check individual records within an expanded job, then click Reprint Selected to resend only those labels.'],
+                ['Reprint All',      'Resend all records in a job to the selected printer.'],
+                ['Delete job',       'Remove a job from the history (cannot be undone).'],
+              ]} />
             </Section>
 
             {/* ── Variables ── */}
             <Section id="variables" title="Template Variables">
-              <p>Template variables let you design a label once and fill it with different data at print time — or eventually from a batch data source.</p>
+              <p>Template variables let you design a label once and fill it with different data at print time — either manually in the Print dialog or from a CSV in Import &amp; Print.</p>
 
               <H3>Syntax</H3>
               <p>Wrap a field name in double curly braces: <code className="bg-slate-800 px-1 rounded text-amber-300">{`{{CompanyName}}`}</code>. Variables can appear in text elements and barcode data fields.</p>
@@ -230,8 +280,11 @@ export default function HelpModal({ isOpen, onClose }) {
                 ['{' + '{barcode}}',    'Used by the barcode field buttons — encodes the barcode value'],
               ]} />
 
-              <H3>At print time</H3>
+              <H3>At print time (single label)</H3>
               <p>Every <code className="bg-slate-800 px-1 rounded text-amber-300">{`{{variable}}`}</code> in the label is listed in the print dialog. Enter a value to substitute it, or leave it blank to print the variable name as a placeholder.</p>
+
+              <H3>At print time (batch / CSV)</H3>
+              <p>In Import &amp; Print, map each variable to a CSV column. The substitution is applied per-row when ZPL is generated for each label.</p>
 
               <H3>Canvas preview</H3>
               <p>The canvas always shows the raw <code className="bg-slate-800 px-1 rounded text-amber-300">{`{{variable}}`}</code> syntax. The substitution only happens when ZPL is generated for printing.</p>

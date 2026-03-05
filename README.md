@@ -1,6 +1,6 @@
 # ZPL Print Management
 
-A self-hosted web application for creating, editing, storing, and testing Zebra ZPL labels. Built with React + Vite on the frontend and Node.js/Express on the backend, packaged as a Docker container.
+A self-hosted web application for creating, editing, storing, and batch-printing Zebra ZPL labels. Built with React + Vite on the frontend and Node.js/Express on the backend, packaged as a Docker container.
 
 ---
 
@@ -14,8 +14,24 @@ A self-hosted web application for creating, editing, storing, and testing Zebra 
 
 ### Label Library
 - **In-app storage** — labels are saved to the server (persisted in a Docker volume), not downloaded as files
-- **Save / Load / Delete** — manage a library of canvas labels and raw ZPL labels
+- **Open label dropdown** — load any saved label directly from the header without opening the full library drawer
+- **Save / Save As / Delete** — manage a library of canvas labels and raw ZPL labels
 - **New label** — clear the canvas and start fresh while keeping the library intact
+
+### Import & Print (Batch Workflow)
+A full-screen CSV-driven print workflow — accessible via the **Import & Print** button in the header.
+
+- **CSV import** — upload a CSV file; all rows load into a preview table with checkboxes for selective printing
+- **Label selector** — pick any saved canvas label as the template without leaving the panel
+- **CSV template download** — generates a correctly structured template CSV based on the label's template variables
+- **Auto field mapping** — `{{variables}}` on the label are automatically matched to CSV columns by name
+- **Manual field mapping** — override or complete the mapping via dropdowns in the sidebar
+- **Per-row quantity** — configure a CSV column for per-row print quantity, or set a global default
+- **Import profiles** — save and reload column mapping configurations per label (stored on the server)
+- **Inline cell editing** — click any cell in the table to edit its value before printing
+- **Per-row thumbnails** — click-to-load Labelary preview for each row
+- **Print Queue** — stage rows from one or more imports, then print them all at once
+- **Print History** — every completed run is logged; filter by label, date, or status; reprint individual records or entire jobs; export history as CSV
 
 ### Printer Commands
 Configure ZPL printer settings per-label, all reflected immediately in the ZPL output:
@@ -59,7 +75,7 @@ services:
       - HTTPS_PORT=3201
       - DATA_DIR=/app/data
     volumes:
-      - /your/data/path:/app/data   # labels, printers, and TLS certs persist here
+      - /your/data/path:/app/data   # labels, printers, TLS certs, and print history persist here
 ```
 
 ```bash
@@ -105,8 +121,10 @@ The Vite dev server proxies `/api/*` to `localhost:3200` automatically.
         │   ├── PropertiesPanel.jsx      # Right panel — element & label properties
         │   ├── ZplPanel.jsx             # Right panel — ZPL output + paste ZPL
         │   ├── LabelLibrary.jsx         # Library drawer — save/load/delete labels
-        │   ├── PrintDialog.jsx          # Print modal — printer selection & template vars
-        │   └── PrinterSettings.jsx      # Printer management modal
+        │   ├── PrintDialog.jsx          # Single-label print modal — printer selection & template vars
+        │   ├── BatchPrintDialog.jsx     # Import & Print — CSV batch workflow, queue, history
+        │   ├── PrinterSettings.jsx      # Printer management modal
+        │   └── HelpModal.jsx            # In-app user manual
         └── lib/
             ├── zplGenerator.js          # Canvas objects → ZPL string (with ^FX comments)
             ├── zplParser.js             # ZPL string → canvas elements
@@ -131,6 +149,13 @@ The Vite dev server proxies `/api/*` to `localhost:3200` automatically.
 | `GET` | `/api/printers/discover` | Scan subnet for Zebra printers |
 | `POST` | `/api/print` | Send ZPL to a printer via TCP |
 | `POST` | `/api/preview` | Proxy to Labelary for PNG preview |
+| `GET` | `/api/jobs` | List print job history |
+| `POST` | `/api/jobs` | Record a completed print job |
+| `GET` | `/api/jobs/:id` | Get full detail for a job (including per-record ZPL) |
+| `DELETE` | `/api/jobs/:id` | Delete a job from history |
+| `GET` | `/api/import-profiles` | List saved CSV import profiles |
+| `POST` | `/api/import-profiles` | Save or update an import profile |
+| `DELETE` | `/api/import-profiles/:id` | Delete an import profile |
 | `GET` | `/api/qz-cert` | QZ Tray code-signing certificate |
 | `POST` | `/api/qz-sign` | Sign QZ Tray challenge |
 | `GET` | `/api/tls-cert` | Download TLS certificate for browser trust |
@@ -146,6 +171,8 @@ All persistent data lives in `DATA_DIR` (default `./data/`, mapped to `/app/data
 |---|---|
 | `labels.json` | Saved label library |
 | `printers.json` | Configured printer list |
+| `jobs.json` | Print job history |
+| `import-profiles.json` | Saved CSV import profiles |
 | `qz-cert.pem` / `qz-key.pem` | QZ Tray code-signing keypair |
 | `tls-cert.pem` / `tls-key.pem` | HTTPS TLS certificate |
 
